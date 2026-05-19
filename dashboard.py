@@ -9,14 +9,24 @@ from streamlit_autorefresh import st_autorefresh
 st_autorefresh(interval=10000, key="live")
 
 # =========================
-# CONFIG
+# CONFIG (DAHA SIKI LAYOUT)
 # =========================
-st.set_page_config(page_title="SCADA CMMS AI v4.1", layout="wide")
+st.set_page_config(page_title="SCADA CMMS AI v4.2", layout="wide")
 
 st.markdown("""
 <style>
 body { background-color: #0b1220; }
-h1,h2,h3 { color: #00ffe5; }
+
+.block-container {
+    padding-top: 0.8rem;
+    padding-bottom: 0.5rem;
+}
+
+h1,h2,h3 {
+    color: #00ffe5;
+    margin-top: 0px;
+    padding-top: 0px;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -46,7 +56,7 @@ def load_data():
 df = load_data()
 
 # =========================
-# SIDEBAR FILTERS
+# SIDEBAR FILTER
 # =========================
 st.sidebar.title("🎛 SCADA CONTROL")
 
@@ -60,13 +70,10 @@ min_date = df["Baslangic"].min().date()
 max_date = df["Baslangic"].max().date()
 
 tarih_aralik = st.sidebar.date_input(
-    "📅 Tarih Aralığı",
+    "📅 Tarih",
     (min_date, max_date)
 )
 
-# =========================
-# FILTER APPLY
-# =========================
 df = df[df["Makine"].isin(secili_makine)]
 
 if len(tarih_aralik) == 2:
@@ -106,100 +113,92 @@ risk["Score"] = 100 - (
 risk["Score"] = risk["Score"].clip(0, 100)
 
 # =========================
-# HEADER
+# HEADER (YUKARI ÇEKİLDİ)
 # =========================
-st.title("🏭 SCADA CMMS AI v4.1 - FULL FILTERED DASHBOARD")
+st.title("🏭 SCADA CMMS AI v4.2 - FULL FILTERED DASHBOARD")
+st.caption("Real-time Industrial Reliability Monitoring System")
 
+# =========================
+# TOP KPI
+# =========================
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("System Health", f"{risk['Score'].mean():.1f}")
 c2.metric("Critical Machines", len(risk[risk["Score"] < 60]))
 c3.metric("Avg MTBF", f"{mtbf.mean():.0f}")
 c4.metric("Total Failures", len(df))
 
+# =========================
+# MTTR + MTBF (YAN YANA)
+# =========================
 st.divider()
-
-# =========================
-# MTBF + PARETO
-# =========================
 col1, col2 = st.columns(2)
 
 with col1:
-    st.subheader("📈 MTBF (Filtered)")
-    fig_mtbf = px.bar(mtbf.reset_index(), x="Makine", y="MTBF", color="MTBF")
-    st.plotly_chart(fig_mtbf, use_container_width=True)
-
-with col2:
-    st.subheader("📊 Pareto (Filtered)")
-    pareto = df["Ariza_Tipi"].value_counts().reset_index()
-    pareto.columns = ["Ariza_Tipi", "Adet"]
-
-    fig_p = px.bar(pareto, x="Ariza_Tipi", y="Adet", color="Adet")
-    st.plotly_chart(fig_p, use_container_width=True)
-
-st.divider()
-
-# =========================
-# HEATMAP
-# =========================
-st.subheader("🔥 Heatmap (Makine vs Arıza)")
-
-heat = pd.crosstab(df["Makine"], df["Ariza_Tipi"])
-
-fig_h = px.imshow(
-    heat,
-    text_auto=True,
-    aspect="auto",
-    color_continuous_scale="Reds"
-)
-
-st.plotly_chart(fig_h, use_container_width=True)
-
-st.divider()
-
-# =========================
-# MACHINE HEALTH
-# =========================
-st.subheader("🏭 Machine Health Score")
-
-fig_s = px.bar(
-    risk.reset_index(),
-    x="Makine",
-    y="Score",
-    color="Score",
-    color_continuous_scale="RdYlGn"
-)
-
-st.plotly_chart(fig_s, use_container_width=True)
-
-# =========================
-# 📉 TREND ANALYSIS (NEW)
-# =========================
-st.divider()
-
-st.subheader("📉 MTTR & ARIZA TREND")
-
-trend = df.copy()
-trend["Tarih"] = trend["Baslangic"].dt.date
-
-mttr_trend = trend.groupby("Tarih")["Durus_Dk"].mean().reset_index()
-ariza_trend = trend.groupby("Tarih").size().reset_index(name="Ariza_Sayisi")
-
-col1, col2 = st.columns(2)
-
-with col1:
-    fig1 = px.line(mttr_trend, x="Tarih", y="Durus_Dk", markers=True)
+    st.subheader("🔴 MTTR")
+    fig1 = px.bar(mttr.reset_index(), x="Makine", y="Durus_Dk", color="Durus_Dk")
+    fig1.update_layout(height=400)
     st.plotly_chart(fig1, use_container_width=True)
 
 with col2:
-    fig2 = px.line(ariza_trend, x="Tarih", y="Ariza_Sayisi", markers=True)
+    st.subheader("🟢 MTBF")
+    fig2 = px.bar(mtbf.reset_index(), x="Makine", y="MTBF", color="MTBF")
+    fig2.update_layout(height=400)
     st.plotly_chart(fig2, use_container_width=True)
 
 # =========================
-# 📋 EXCEL-LIKE TABLE (NEW)
+# HEALTH + TREND (ALT SATIR)
 # =========================
 st.divider()
 
-st.subheader("📋 ARIZA KAYIT TABLOSU (EXCEL VIEW)")
+col3, col4 = st.columns(2)
+
+with col3:
+    st.subheader("🏭 Machine Health Score")
+    fig3 = px.bar(risk.reset_index(), x="Makine", y="Score", color="Score",
+                  color_continuous_scale="RdYlGn")
+    fig3.update_layout(height=400)
+    st.plotly_chart(fig3, use_container_width=True)
+
+with col4:
+    st.subheader("📉 Arıza Trend")
+    trend = df.copy()
+    trend["Tarih"] = trend["Baslangic"].dt.date
+    ariza_trend = trend.groupby("Tarih").size().reset_index(name="Ariza")
+
+    fig4 = px.line(ariza_trend, x="Tarih", y="Ariza", markers=True)
+    fig4.update_layout(height=400)
+    st.plotly_chart(fig4, use_container_width=True)
+
+# =========================
+# HEATMAP + PARETO
+# =========================
+st.divider()
+
+col5, col6 = st.columns(2)
+
+with col5:
+    st.subheader("🔥 Heatmap")
+    heat = pd.crosstab(df["Makine"], df["Ariza_Tipi"])
+    fig5 = px.imshow(heat, text_auto=True, aspect="auto",
+                     color_continuous_scale="Reds")
+    fig5.update_layout(height=450)
+    st.plotly_chart(fig5, use_container_width=True)
+
+with col6:
+    st.subheader("📊 Pareto")
+    pareto = df["Ariza_Tipi"].value_counts().reset_index()
+    pareto.columns = ["Ariza_Tipi", "Adet"]
+
+    fig6 = px.bar(pareto, x="Ariza_Tipi", y="Adet", color="Adet")
+    fig6.update_layout(height=450)
+    st.plotly_chart(fig6, use_container_width=True)
+
+# =========================
+# EXCEL TABLE (EN ALT)
+# =========================
+st.divider()
+
+st.subheader("📋 ARIZA KAYIT TABLOSU")
 
 table_df = df[[
     "Makine",
@@ -208,12 +207,6 @@ table_df = df[[
     "Bitis",
     "Durus_Dk",
     "MTBF"
-]].copy()
+]].sort_values("Baslangic", ascending=False)
 
-table_df = table_df.sort_values("Baslangic", ascending=False)
-
-st.dataframe(
-    table_df,
-    use_container_width=True,
-    height=400
-)
+st.dataframe(table_df, use_container_width=True, height=400)
