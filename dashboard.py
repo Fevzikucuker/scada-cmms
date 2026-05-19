@@ -9,7 +9,7 @@ from streamlit_autorefresh import st_autorefresh
 st_autorefresh(interval=10000, key="live")
 
 # =========================
-# CONFIG (DAHA SIKI LAYOUT)
+# CONFIG
 # =========================
 st.set_page_config(page_title="SCADA CMMS AI v4.2", layout="wide")
 
@@ -56,12 +56,38 @@ def load_data():
 df = load_data()
 
 # =========================
-# SIDEBAR FILTER
+# SIDEBAR (PRO SCADA PANEL)
 # =========================
-st.sidebar.title("🎛 SCADA CONTROL")
+st.sidebar.markdown("""
+<div style="
+    background: linear-gradient(180deg, #0b1220, #0f172a);
+    padding: 18px;
+    border-radius: 14px;
+    border: 1px solid #00ffe5;
+    box-shadow: 0 0 18px rgba(0,255,229,0.15);
+    margin-bottom: 15px;
+">
+    <h2 style="
+        color:#00ffe5;
+        text-align:center;
+        margin:0;
+        font-size:18px;
+    ">
+        ⚙ SCADA CONTROL PANEL
+    </h2>
+    <p style="
+        color:#94a3b8;
+        text-align:center;
+        font-size:12px;
+        margin-top:6px;
+    ">
+        Real-Time CMMS Monitoring
+    </p>
+</div>
+""", unsafe_allow_html=True)
 
 secili_makine = st.sidebar.multiselect(
-    "🏭 Makine Seçimi",
+    "🏭 Machine Selection",
     sorted(df["Makine"].dropna().unique()),
     default=sorted(df["Makine"].dropna().unique())
 )
@@ -70,10 +96,27 @@ min_date = df["Baslangic"].min().date()
 max_date = df["Baslangic"].max().date()
 
 tarih_aralik = st.sidebar.date_input(
-    "📅 Tarih",
+    "📅 Time Range",
     (min_date, max_date)
 )
 
+st.sidebar.markdown("---")
+
+st.sidebar.markdown("""
+<div style="
+    background:#0f172a;
+    padding:12px;
+    border-radius:10px;
+    border:1px solid rgba(0,255,229,0.2);
+">
+    <p style="color:#22c55e;margin:0;">🟢 SYSTEM ONLINE</p>
+    <p style="color:#94a3b8;margin:0;font-size:11px;">Auto Refresh: 10s</p>
+</div>
+""", unsafe_allow_html=True)
+
+# =========================
+# FILTER
+# =========================
 df = df[df["Makine"].isin(secili_makine)]
 
 if len(tarih_aralik) == 2:
@@ -85,7 +128,7 @@ if len(tarih_aralik) == 2:
 df = df.sort_values(["Makine", "Baslangic"])
 
 # =========================
-# KPI CALC
+# KPI
 # =========================
 df["Onceki_Bitis"] = df.groupby("Makine")["Bitis"].shift(1)
 df["MTBF"] = (df["Baslangic"] - df["Onceki_Bitis"]).dt.total_seconds() / 60
@@ -95,9 +138,6 @@ mttr = df.groupby("Makine")["Durus_Dk"].mean()
 mtbf = df.groupby("Makine")["MTBF"].mean()
 ariza = df["Makine"].value_counts()
 
-# =========================
-# HEALTH SCORE
-# =========================
 risk = pd.DataFrame({
     "MTTR": mttr,
     "MTBF": mtbf,
@@ -113,14 +153,10 @@ risk["Score"] = 100 - (
 risk["Score"] = risk["Score"].clip(0, 100)
 
 # =========================
-# HEADER (YUKARI ÇEKİLDİ)
+# HEADER
 # =========================
-st.title("🏭 SCADA CMMS AI v4.2 - FULL FILTERED DASHBOARD")
-st.caption("Real-time Industrial Reliability Monitoring System")
+st.title("🏭 SCADA CMMS AI v4.2 - FULL DASHBOARD")
 
-# =========================
-# TOP KPI
-# =========================
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("System Health", f"{risk['Score'].mean():.1f}")
 c2.metric("Critical Machines", len(risk[risk["Score"] < 60]))
@@ -128,36 +164,32 @@ c3.metric("Avg MTBF", f"{mtbf.mean():.0f}")
 c4.metric("Total Failures", len(df))
 
 # =========================
-# MTTR + MTBF (YAN YANA)
+# MTTR / MTBF
 # =========================
 st.divider()
 col1, col2 = st.columns(2)
 
 with col1:
     st.subheader("🔴 MTTR")
-    fig1 = px.bar(mttr.reset_index(), x="Makine", y="Durus_Dk", color="Durus_Dk")
-    fig1.update_layout(height=400)
-    st.plotly_chart(fig1, use_container_width=True)
+    st.plotly_chart(px.bar(mttr.reset_index(), x="Makine", y="Durus_Dk", color="Durus_Dk"),
+                    use_container_width=True)
 
 with col2:
     st.subheader("🟢 MTBF")
-    fig2 = px.bar(mtbf.reset_index(), x="Makine", y="MTBF", color="MTBF")
-    fig2.update_layout(height=400)
-    st.plotly_chart(fig2, use_container_width=True)
+    st.plotly_chart(px.bar(mtbf.reset_index(), x="Makine", y="MTBF", color="MTBF"),
+                    use_container_width=True)
 
 # =========================
-# HEALTH + TREND (ALT SATIR)
+# HEALTH + TREND
 # =========================
 st.divider()
-
 col3, col4 = st.columns(2)
 
 with col3:
-    st.subheader("🏭 Machine Health Score")
-    fig3 = px.bar(risk.reset_index(), x="Makine", y="Score", color="Score",
-                  color_continuous_scale="RdYlGn")
-    fig3.update_layout(height=400)
-    st.plotly_chart(fig3, use_container_width=True)
+    st.subheader("🏭 Machine Health")
+    st.plotly_chart(px.bar(risk.reset_index(), x="Makine", y="Score",
+                           color="Score", color_continuous_scale="RdYlGn"),
+                    use_container_width=True)
 
 with col4:
     st.subheader("📉 Arıza Trend")
@@ -165,39 +197,34 @@ with col4:
     trend["Tarih"] = trend["Baslangic"].dt.date
     ariza_trend = trend.groupby("Tarih").size().reset_index(name="Ariza")
 
-    fig4 = px.line(ariza_trend, x="Tarih", y="Ariza", markers=True)
-    fig4.update_layout(height=400)
-    st.plotly_chart(fig4, use_container_width=True)
+    st.plotly_chart(px.line(ariza_trend, x="Tarih", y="Ariza", markers=True),
+                    use_container_width=True)
 
 # =========================
 # HEATMAP + PARETO
 # =========================
 st.divider()
-
 col5, col6 = st.columns(2)
 
 with col5:
     st.subheader("🔥 Heatmap")
     heat = pd.crosstab(df["Makine"], df["Ariza_Tipi"])
-    fig5 = px.imshow(heat, text_auto=True, aspect="auto",
-                     color_continuous_scale="Reds")
-    fig5.update_layout(height=450)
-    st.plotly_chart(fig5, use_container_width=True)
+    st.plotly_chart(px.imshow(heat, text_auto=True, aspect="auto",
+                              color_continuous_scale="Reds"),
+                    use_container_width=True)
 
 with col6:
     st.subheader("📊 Pareto")
     pareto = df["Ariza_Tipi"].value_counts().reset_index()
     pareto.columns = ["Ariza_Tipi", "Adet"]
 
-    fig6 = px.bar(pareto, x="Ariza_Tipi", y="Adet", color="Adet")
-    fig6.update_layout(height=450)
-    st.plotly_chart(fig6, use_container_width=True)
+    st.plotly_chart(px.bar(pareto, x="Ariza_Tipi", y="Adet", color="Adet"),
+                    use_container_width=True)
 
 # =========================
-# EXCEL TABLE (EN ALT)
+# TABLE
 # =========================
 st.divider()
-
 st.subheader("📋 ARIZA KAYIT TABLOSU")
 
 table_df = df[[
