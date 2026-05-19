@@ -6,33 +6,32 @@ from streamlit_autorefresh import st_autorefresh
 # =========================
 # AUTO REFRESH
 # =========================
-st_autorefresh(interval=5000, key="live")
+st_autorefresh(interval=10000, key="live")
 
 # =========================
-# PAGE CONFIG
+# CONFIG
 # =========================
-st.set_page_config(page_title="SCADA CMMS AI v3.5", layout="wide")
+st.set_page_config(page_title="Executive SCADA Dashboard", layout="wide")
 
-# =========================
-# STYLE
-# =========================
 st.markdown("""
 <style>
-body { background-color: #070b14; }
+body { background-color: #0b1220; }
 .block-container { padding: 1rem 2rem; }
-h1,h2,h3 { color: #00ffe5; }
 
-div[data-testid="metric-container"] {
+h1 { color: #00ffe5; }
+h2, h3 { color: #ffffff; }
+
+.card {
     background-color: #111827;
-    border: 1px solid #00ffe5;
-    padding: 12px;
-    border-radius: 12px;
+    padding: 20px;
+    border-radius: 15px;
+    border: 1px solid #2dd4bf;
 }
 </style>
 """, unsafe_allow_html=True)
 
 # =========================
-# DATA LOAD
+# DATA
 # =========================
 @st.cache_data(ttl=5)
 def load_data():
@@ -56,20 +55,10 @@ def load_data():
 
 df = load_data()
 
-# =========================
-# FILTERS
-# =========================
-secili_makine = st.multiselect(
-    "🏭 Makine",
-    sorted(df["Makine"].dropna().unique()),
-    default=sorted(df["Makine"].dropna().unique())
-)
-
-df = df[df["Makine"].isin(secili_makine)]
 df = df.sort_values(["Makine", "Baslangic"])
 
 # =========================
-# KPI
+# KPI CALC
 # =========================
 df["Onceki_Bitis"] = df.groupby("Makine")["Bitis"].shift(1)
 df["MTBF"] = (df["Baslangic"] - df["Onceki_Bitis"]).dt.total_seconds() / 60
@@ -78,114 +67,100 @@ df = df[df["MTBF"] > 0]
 mttr = df.groupby("Makine")["Durus_Dk"].mean()
 mtbf = df.groupby("Makine")["MTBF"].mean()
 ariza = df["Makine"].value_counts()
+
 availability = mtbf / (mtbf + mttr)
 
 # =========================
-# AI HEALTH SCORE
+# SIMPLE HEALTH SCORE
 # =========================
 risk = pd.DataFrame({
     "MTTR": mttr,
     "MTBF": mtbf
 }).fillna(0)
 
-risk["Ariza_Sayisi"] = ariza
+risk["Ariza"] = ariza
 
-risk["MTTR_N"] = (risk["MTTR"] - risk["MTTR"].min()) / (risk["MTTR"].max() - risk["MTTR"].min() + 1e-6)
-risk["ARIZA_N"] = (risk["Ariza_Sayisi"] - risk["Ariza_Sayisi"].min()) / (risk["Ariza_Sayisi"].max() - risk["Ariza_Sayisi"].min() + 1e-6)
-risk["MTBF_N"] = (risk["MTBF"].max() - risk["MTBF"]) / (risk["MTBF"].max() - risk["MTBF"].min() + 1e-6)
-
-risk["Health_Score"] = 100 - (
-    risk["MTTR_N"] * 40 +
-    risk["ARIZA_N"] * 35 +
-    risk["MTBF_N"] * 25
+risk["score"] = 100 - (
+    (risk["MTTR"] / (risk["MTTR"].max()+1e-6)) * 40 +
+    (risk["Ariza"] / (risk["Ariza"].max()+1e-6)) * 35 +
+    ((risk["MTBF"].max()-risk["MTBF"]) / (risk["MTBF"].max()+1e-6)) * 25
 )
 
-risk["Health_Score"] = risk["Health_Score"].clip(0, 100)
+risk["score"] = risk["score"].clip(0, 100)
 
 # =========================
 # HEADER
 # =========================
-st.title("🏭 SCADA CMMS AI v3.5 CONTROL ROOM")
+st.title("🏭 EXECUTIVE SCADA DASHBOARD")
+st.caption("Yönetici görünümü – sade karar paneli")
+
 st.divider()
 
 # =========================
-# KPI CARDS
+# 🟢 SYSTEM STATUS
 # =========================
+overall_health = risk["score"].mean()
+
+if overall_health >= 80:
+    status = "🟢 STABLE"
+elif overall_health >= 60:
+    status = "🟡 WARNING"
+else:
+    status = "🔴 CRITICAL"
+
 c1, c2, c3, c4 = st.columns(4)
 
-c1.metric("MTTR", f"{mttr.mean():.2f}")
-c2.metric("MTBF", f"{mtbf.mean():.2f}")
-c3.metric("Availability", f"{availability.mean():.2f}")
-c4.metric("Arıza", len(df))
+c1.metric("🏭 System Health", f"{overall_health:.1f}/100", status)
+c2.metric("🔴 Critical Machines", len(risk[risk["score"] < 60]))
+c3.metric("⏱ Avg MTBF", f"{mtbf.mean():.0f} min")
+c4.metric("⚙ Active Failures", len(df))
 
 st.divider()
 
 # =========================
-# TOP 5 CRITICAL MACHINES
+# 🚨 TOP ACTION LIST
 # =========================
-st.subheader("🚨 TOP 5 KRİTİK MAKİNE")
+st.subheader("🚨 ACTION REQUIRED (TOP 3 MACHINES)")
 
-top5 = risk.sort_values("Health_Score").head(5)
+top3 = risk.sort_values("score").head(3)
 
-st.dataframe(
-    top5[["Health_Score", "MTTR", "MTBF", "Ariza_Sayisi"]],
-    use_container_width=True
-)
+for i, row in top3.iterrows():
+    st.error(
+        f"Makine: {i} | Health: {row['score']:.1f} | "
+        f"MTTR: {row['MTTR']:.1f} dk | Arıza: {row['Ariza']}"
+    )
+
+st.divider()
 
 # =========================
-# HEALTH SCORE CHART
+# 📊 SIMPLE TREND
 # =========================
-st.subheader("🧠 MACHINE HEALTH SCORE")
+st.subheader("📈 SYSTEM TREND (SIMPLIFIED)")
 
-fig = px.bar(
-    risk.reset_index(),
-    x="Makine",
-    y="Health_Score",
-    color="Health_Score",
-    color_continuous_scale="RdYlGn",
-    text="Health_Score"
-)
+df["date"] = df["Baslangic"].dt.date
+trend = df.groupby("date").size().reset_index(name="Arıza")
 
-fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
-fig.update_layout(height=600)
+fig = px.line(trend, x="date", y="Arıza", markers=True)
+fig.update_layout(height=400)
 
 st.plotly_chart(fig, use_container_width=True)
 
-st.divider()
-
 # =========================
-# KPI TREND
+# 🧾 SUMMARY TEXT (IMPORTANT)
 # =========================
-st.subheader("📊 KPI TREND")
+st.subheader("🧠 MANAGEMENT SUMMARY")
 
-def trend(s):
-    return "📈 UP" if s.mean() > s.iloc[0] else "📉 DOWN"
-
-c1, c2, c3 = st.columns(3)
-
-c1.metric("MTTR Trend", f"{mttr.mean():.2f}", trend(mttr))
-c2.metric("MTBF Trend", f"{mtbf.mean():.2f}", trend(mtbf))
-c3.metric("Availability Trend", f"{availability.mean():.2f}", trend(availability))
+if overall_health >= 80:
+    st.success("Sistem stabil. Kritik aksiyon gerekmiyor.")
+elif overall_health >= 60:
+    st.warning("Sistemde erken uyarı var. Önleyici bakım önerilir.")
+else:
+    st.error("Kritik durum! Bakım müdahalesi acil gerekli.")
 
 st.divider()
 
 # =========================
-# WEEKLY TREND
+# RAW DATA (hidden mindset)
 # =========================
-st.subheader("📈 WEEKLY ARIZA TREND")
-
-df["Hafta"] = df["Baslangic"].dt.to_period("W").astype(str)
-
-weekly = df.groupby("Hafta").size().reset_index(name="Ariza")
-
-fig2 = px.line(weekly, x="Hafta", y="Ariza", markers=True)
-
-fig2.update_layout(height=500)
-
-st.plotly_chart(fig2, use_container_width=True)
-
-# =========================
-# TABLE
-# =========================
-st.subheader("📡 LIVE DATA")
-st.dataframe(df, use_container_width=True)
+with st.expander("📡 Raw Data (Engineer View)"):
+    st.dataframe(df, use_container_width=True)
