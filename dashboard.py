@@ -89,8 +89,78 @@ st.sidebar.markdown("""
 secili_makine = st.sidebar.multiselect(
     "🏭 Machine Selection",
     sorted(df["Makine"].dropna().unique()),
-    default=sorted(df["Makine"].dropna().unique())
+    default=sorted(df["Makine"].dropna().unique()),
+    help="Select machines for live monitoring"
 )
+
+st.sidebar.markdown("""
+<style>
+div[data-baseweb="select"] {
+    max-height: 300px;
+    overflow-y: auto;
+}
+</style>
+""", unsafe_allow_html=True)
+secili_makine = st.sidebar.multiselect(
+    "🏭 Machine Selection",
+    sorted(df["Makine"].dropna().unique()),
+    default=sorted(df["Makine"].dropna().unique()),
+    help="Select machines for live monitoring"
+)
+
+st.sidebar.markdown("""
+<style>
+div[data-baseweb="select"] {
+    max-height: 300px;
+    overflow-y: auto;
+}
+</style>
+""", unsafe_allow_html=True)
+secili_makine = st.sidebar.multiselect(
+    "🏭 Machine Selection",
+    sorted(df["Makine"].dropna().unique()),
+    default=sorted(df["Makine"].dropna().unique()),
+    help="Select machines for live monitoring"
+)
+
+st.sidebar.markdown("""
+<style>
+div[data-baseweb="select"] {
+    max-height: 300px;
+    overflow-y: auto;
+}
+</style>
+""", unsafe_allow_html=True)
+secili_makine = st.sidebar.multiselect(
+    "🏭 Machine Selection",
+    sorted(df["Makine"].dropna().unique()),
+    default=sorted(df["Makine"].dropna().unique()),
+    help="Select machines for live monitoring"
+)
+
+st.sidebar.markdown("""
+<style>
+div[data-baseweb="select"] {
+    max-height: 300px;
+    overflow-y: auto;
+}
+</style>
+""", unsafe_allow_html=True)
+secili_makine = st.sidebar.multiselect(
+    "🏭 Machine Selection",
+    sorted(df["Makine"].dropna().unique()),
+    default=sorted(df["Makine"].dropna().unique()),
+    help="Select machines for live monitoring"
+)
+
+st.sidebar.markdown("""
+<style>
+div[data-baseweb="select"] {
+    max-height: 300px;
+    overflow-y: auto;
+}
+</style>
+""", unsafe_allow_html=True)
 
 min_date = df["Baslangic"].min().date()
 max_date = df["Baslangic"].max().date()
