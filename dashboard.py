@@ -2,10 +2,6 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from streamlit_autorefresh import st_autorefresh
-from io import BytesIO
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib import colors
 
 # =========================
 # AUTO REFRESH
@@ -15,7 +11,7 @@ st_autorefresh(interval=10000, key="live")
 # =========================
 # CONFIG
 # =========================
-st.set_page_config(page_title="SCADA CMMS AI v3", layout="wide")
+st.set_page_config(page_title="SCADA CMMS AI v4", layout="wide")
 
 st.markdown("""
 <style>
@@ -25,7 +21,7 @@ h1,h2,h3 { color: #00ffe5; }
 """, unsafe_allow_html=True)
 
 # =========================
-# DATA
+# DATA LOAD
 # =========================
 @st.cache_data(ttl=5)
 def load_data():
@@ -48,10 +44,41 @@ def load_data():
     return df
 
 df = load_data()
+
+# =========================
+# SIDEBAR FILTERS (GERÇEK SCADA)
+# =========================
+st.sidebar.title("🎛 SCADA CONTROL")
+
+secili_makine = st.sidebar.multiselect(
+    "🏭 Makine Seçimi",
+    sorted(df["Makine"].dropna().unique()),
+    default=sorted(df["Makine"].dropna().unique())
+)
+
+min_date = df["Baslangic"].min().date()
+max_date = df["Baslangic"].max().date()
+
+tarih_aralik = st.sidebar.date_input(
+    "📅 Tarih Aralığı",
+    (min_date, max_date)
+)
+
+# =========================
+# FILTER APPLY
+# =========================
+df = df[df["Makine"].isin(secili_makine)]
+
+if len(tarih_aralik) == 2:
+    df = df[
+        (df["Baslangic"] >= pd.to_datetime(tarih_aralik[0])) &
+        (df["Baslangic"] <= pd.to_datetime(tarih_aralik[1]))
+    ]
+
 df = df.sort_values(["Makine", "Baslangic"])
 
 # =========================
-# KPI CALC
+# KPI CALC (FILTERED)
 # =========================
 df["Onceki_Bitis"] = df.groupby("Makine")["Bitis"].shift(1)
 df["MTBF"] = (df["Baslangic"] - df["Onceki_Bitis"]).dt.total_seconds() / 60
@@ -81,12 +108,11 @@ risk["Score"] = risk["Score"].clip(0, 100)
 # =========================
 # HEADER
 # =========================
-st.title("🏭 SCADA CMMS AI DASHBOARD v3")
-
-overall = risk["Score"].mean()
+st.title("🏭 SCADA CMMS AI v4 - FILTERED DASHBOARD")
 
 c1, c2, c3, c4 = st.columns(4)
-c1.metric("System Health", f"{overall:.1f}")
+
+c1.metric("System Health", f"{risk['Score'].mean():.1f}")
 c2.metric("Critical Machines", len(risk[risk["Score"] < 60]))
 c3.metric("Avg MTBF", f"{mtbf.mean():.0f}")
 c4.metric("Total Failures", len(df))
@@ -94,18 +120,17 @@ c4.metric("Total Failures", len(df))
 st.divider()
 
 # =========================
-# MTBF + PARETO (2 COL)
+# MTBF + PARETO
 # =========================
 col1, col2 = st.columns(2)
 
 with col1:
-    st.subheader("📈 MTBF")
+    st.subheader("📈 MTBF (Filtered)")
     fig_mtbf = px.bar(mtbf.reset_index(), x="Makine", y="MTBF", color="MTBF")
     st.plotly_chart(fig_mtbf, use_container_width=True)
 
 with col2:
-    st.subheader("📊 Pareto Analysis")
-
+    st.subheader("📊 Pareto (Filtered)")
     pareto = df["Ariza_Tipi"].value_counts().reset_index()
     pareto.columns = ["Ariza_Tipi", "Adet"]
 
@@ -117,7 +142,7 @@ st.divider()
 # =========================
 # HEATMAP
 # =========================
-st.subheader("🔥 Heatmap (Machine vs Failure)")
+st.subheader("🔥 Heatmap (Makine vs Arıza)")
 
 heat = pd.crosstab(df["Makine"], df["Ariza_Tipi"])
 
@@ -133,11 +158,11 @@ st.plotly_chart(fig_h, use_container_width=True)
 st.divider()
 
 # =========================
-# MACHINE STATUS
+# MACHINE HEALTH
 # =========================
-st.subheader("🏭 Machine Health Overview")
+st.subheader("🏭 Machine Health Score")
 
-fig_score = px.bar(
+fig_s = px.bar(
     risk.reset_index(),
     x="Makine",
     y="Score",
@@ -145,53 +170,4 @@ fig_score = px.bar(
     color_continuous_scale="RdYlGn"
 )
 
-st.plotly_chart(fig_score, use_container_width=True)
-
-st.divider()
-
-# =========================
-# PDF REPORT (PRO)
-# =========================
-def generate_pdf():
-
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer)
-    styles = getSampleStyleSheet()
-    content = []
-
-    content.append(Paragraph("SCADA CMMS MANAGEMENT REPORT", styles["Title"]))
-    content.append(Spacer(1, 12))
-
-    content.append(Paragraph(f"System Health: {overall:.2f}", styles["Heading2"]))
-    content.append(Paragraph(f"MTTR Avg: {mttr.mean():.2f}", styles["Normal"]))
-    content.append(Paragraph(f"MTBF Avg: {mtbf.mean():.2f}", styles["Normal"]))
-    content.append(Spacer(1, 12))
-
-    top = risk.sort_values("Score").head(5)
-
-    table_data = [["Machine", "Score", "MTTR", "MTBF", "Failures"]]
-
-    for i, r in top.iterrows():
-        table_data.append([i, f"{r['Score']:.1f}", f"{r['MTTR']:.1f}", f"{r['MTBF']:.1f}", int(r["Ariza"])])
-
-    table = Table(table_data)
-    table.setStyle(TableStyle([
-        ("BACKGROUND",(0,0),(-1,0),colors.grey),
-        ("TEXTCOLOR",(0,0),(-1,0),colors.white),
-        ("GRID",(0,0),(-1,-1),0.5,colors.black)
-    ]))
-
-    content.append(table)
-    doc.build(content)
-
-    buffer.seek(0)
-    return buffer
-
-pdf = generate_pdf()
-
-st.download_button(
-    "📥 Download Management PDF",
-    pdf,
-    file_name="SCADA_REPORT_V3.pdf",
-    mime="application/pdf"
-)
+st.plotly_chart(fig_s, use_container_width=True)
