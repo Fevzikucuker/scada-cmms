@@ -35,7 +35,7 @@ h1,h2,h3 {
 # =========================
 @st.cache_data(ttl=5)
 def load_data():
-    url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRfxWf8ilCrbH4Bd8nVxeVTIuQSkCJDYIJUWEJ5SoD3GqkSVyC4f0hvDyXhm8DTJy4b3NY75dDwyGjK/pub?output=csv"
+    url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRfxWf8ilCrbH4Bd8nVxeVTIuQSkCJDYIJUWEJ5SoD3GqkSVyC4f0hvDyXhm8DTJy4b3NY75dDwyGjP/pub?output=csv"
     df = pd.read_csv(url)
 
     df.columns = df.columns.str.strip()
@@ -56,7 +56,7 @@ def load_data():
 df = load_data()
 
 # =========================
-# SIDEBAR (PRO SCADA PANEL)
+# SIDEBAR (ONLY UPGRADED PART)
 # =========================
 st.sidebar.markdown("""
 <div style="
@@ -72,6 +72,7 @@ st.sidebar.markdown("""
         text-align:center;
         margin:0;
         font-size:18px;
+        letter-spacing:1px;
     ">
         ⚙ SCADA CONTROL PANEL
     </h2>
@@ -89,78 +90,8 @@ st.sidebar.markdown("""
 secili_makine = st.sidebar.multiselect(
     "🏭 Machine Selection",
     sorted(df["Makine"].dropna().unique()),
-    default=sorted(df["Makine"].dropna().unique()),
-    help="Select machines for live monitoring"
+    default=sorted(df["Makine"].dropna().unique())
 )
-
-st.sidebar.markdown("""
-<style>
-div[data-baseweb="select"] {
-    max-height: 300px;
-    overflow-y: auto;
-}
-</style>
-""", unsafe_allow_html=True)
-secili_makine = st.sidebar.multiselect(
-    "🏭 Machine Selection",
-    sorted(df["Makine"].dropna().unique()),
-    default=sorted(df["Makine"].dropna().unique()),
-    help="Select machines for live monitoring"
-)
-
-st.sidebar.markdown("""
-<style>
-div[data-baseweb="select"] {
-    max-height: 300px;
-    overflow-y: auto;
-}
-</style>
-""", unsafe_allow_html=True)
-secili_makine = st.sidebar.multiselect(
-    "🏭 Machine Selection",
-    sorted(df["Makine"].dropna().unique()),
-    default=sorted(df["Makine"].dropna().unique()),
-    help="Select machines for live monitoring"
-)
-
-st.sidebar.markdown("""
-<style>
-div[data-baseweb="select"] {
-    max-height: 300px;
-    overflow-y: auto;
-}
-</style>
-""", unsafe_allow_html=True)
-secili_makine = st.sidebar.multiselect(
-    "🏭 Machine Selection",
-    sorted(df["Makine"].dropna().unique()),
-    default=sorted(df["Makine"].dropna().unique()),
-    help="Select machines for live monitoring"
-)
-
-st.sidebar.markdown("""
-<style>
-div[data-baseweb="select"] {
-    max-height: 300px;
-    overflow-y: auto;
-}
-</style>
-""", unsafe_allow_html=True)
-secili_makine = st.sidebar.multiselect(
-    "🏭 Machine Selection",
-    sorted(df["Makine"].dropna().unique()),
-    default=sorted(df["Makine"].dropna().unique()),
-    help="Select machines for live monitoring"
-)
-
-st.sidebar.markdown("""
-<style>
-div[data-baseweb="select"] {
-    max-height: 300px;
-    overflow-y: auto;
-}
-</style>
-""", unsafe_allow_html=True)
 
 min_date = df["Baslangic"].min().date()
 max_date = df["Baslangic"].max().date()
