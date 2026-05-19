@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from streamlit_autorefresh import st_autorefresh
+from io import BytesIO
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
 
 # =========================
 # AUTO REFRESH
@@ -11,20 +14,17 @@ st_autorefresh(interval=10000, key="live")
 # =========================
 # CONFIG
 # =========================
-st.set_page_config(page_title="Executive SCADA Dashboard", layout="wide")
+st.set_page_config(page_title="SCADA CMMS AI v2", layout="wide")
 
 st.markdown("""
 <style>
 body { background-color: #0b1220; }
-.block-container { padding: 1rem 2rem; }
-
-h1 { color: #00ffe5; }
-h2, h3 { color: #ffffff; }
+h1,h2,h3 { color: #00ffe5; }
 
 .card {
     background-color: #111827;
-    padding: 20px;
-    border-radius: 15px;
+    padding: 15px;
+    border-radius: 12px;
     border: 1px solid #2dd4bf;
 }
 </style>
@@ -54,7 +54,6 @@ def load_data():
     return df
 
 df = load_data()
-
 df = df.sort_values(["Makine", "Baslangic"])
 
 # =========================
@@ -68,99 +67,115 @@ mttr = df.groupby("Makine")["Durus_Dk"].mean()
 mtbf = df.groupby("Makine")["MTBF"].mean()
 ariza = df["Makine"].value_counts()
 
-availability = mtbf / (mtbf + mttr)
-
 # =========================
-# SIMPLE HEALTH SCORE
+# HEALTH SCORE
 # =========================
 risk = pd.DataFrame({
     "MTTR": mttr,
-    "MTBF": mtbf
+    "MTBF": mtbf,
+    "Ariza": ariza
 }).fillna(0)
 
-risk["Ariza"] = ariza
-
-risk["score"] = 100 - (
+risk["Score"] = 100 - (
     (risk["MTTR"] / (risk["MTTR"].max()+1e-6)) * 40 +
     (risk["Ariza"] / (risk["Ariza"].max()+1e-6)) * 35 +
     ((risk["MTBF"].max()-risk["MTBF"]) / (risk["MTBF"].max()+1e-6)) * 25
 )
 
-risk["score"] = risk["score"].clip(0, 100)
+risk["Score"] = risk["Score"].clip(0, 100)
 
 # =========================
 # HEADER
 # =========================
-st.title("🏭 EXECUTIVE SCADA DASHBOARD")
-st.caption("Yönetici görünümü – sade karar paneli")
+st.title("🏭 SCADA CMMS AI v2 – Hybrid Dashboard")
 
 st.divider()
 
 # =========================
-# 🟢 SYSTEM STATUS
+# EXECUTIVE SUMMARY
 # =========================
-overall_health = risk["score"].mean()
+overall = risk["Score"].mean()
 
-if overall_health >= 80:
-    status = "🟢 STABLE"
-elif overall_health >= 60:
-    status = "🟡 WARNING"
-else:
-    status = "🔴 CRITICAL"
+col1, col2, col3, col4 = st.columns(4)
 
-c1, c2, c3, c4 = st.columns(4)
-
-c1.metric("🏭 System Health", f"{overall_health:.1f}/100", status)
-c2.metric("🔴 Critical Machines", len(risk[risk["score"] < 60]))
-c3.metric("⏱ Avg MTBF", f"{mtbf.mean():.0f} min")
-c4.metric("⚙ Active Failures", len(df))
+col1.metric("🏭 System Health", f"{overall:.1f}/100")
+col2.metric("🔴 Critical Machines", len(risk[risk["Score"] < 60]))
+col3.metric("⏱ Avg MTBF", f"{mtbf.mean():.0f} min")
+col4.metric("⚙ Total Failures", len(df))
 
 st.divider()
 
 # =========================
-# 🚨 TOP ACTION LIST
+# MACHINE STATUS (IMPORTANT PART RESTORED)
 # =========================
-st.subheader("🚨 ACTION REQUIRED (TOP 3 MACHINES)")
+st.subheader("🏭 MACHINE STATUS OVERVIEW")
 
-top3 = risk.sort_values("score").head(3)
+risk_sorted = risk.sort_values("Score")
 
-for i, row in top3.iterrows():
-    st.error(
-        f"Makine: {i} | Health: {row['score']:.1f} | "
-        f"MTTR: {row['MTTR']:.1f} dk | Arıza: {row['Ariza']}"
-    )
+fig = px.bar(
+    risk_sorted.reset_index(),
+    x="Makine",
+    y="Score",
+    color="Score",
+    text="Score",
+    color_continuous_scale="RdYlGn"
+)
 
-st.divider()
-
-# =========================
-# 📊 SIMPLE TREND
-# =========================
-st.subheader("📈 SYSTEM TREND (SIMPLIFIED)")
-
-df["date"] = df["Baslangic"].dt.date
-trend = df.groupby("date").size().reset_index(name="Arıza")
-
-fig = px.line(trend, x="date", y="Arıza", markers=True)
-fig.update_layout(height=400)
-
+fig.update_layout(height=500)
 st.plotly_chart(fig, use_container_width=True)
 
 # =========================
-# 🧾 SUMMARY TEXT (IMPORTANT)
+# TOP CRITICAL
 # =========================
-st.subheader("🧠 MANAGEMENT SUMMARY")
+st.subheader("🚨 Critical Machines")
 
-if overall_health >= 80:
-    st.success("Sistem stabil. Kritik aksiyon gerekmiyor.")
-elif overall_health >= 60:
-    st.warning("Sistemde erken uyarı var. Önleyici bakım önerilir.")
-else:
-    st.error("Kritik durum! Bakım müdahalesi acil gerekli.")
+for i, row in risk_sorted.head(5).iterrows():
+    st.error(f"{i} → Score: {row['Score']:.1f} | MTTR: {row['MTTR']:.1f} | Arıza: {row['Ariza']}")
 
 st.divider()
 
 # =========================
-# RAW DATA (hidden mindset)
+# TREND
 # =========================
-with st.expander("📡 Raw Data (Engineer View)"):
+st.subheader("📈 Failure Trend")
+
+trend = df.groupby(df["Baslangic"].dt.date).size().reset_index(name="Arıza")
+
+fig2 = px.line(trend, x="Baslangic", y="Arıza", markers=True)
+st.plotly_chart(fig2, use_container_width=True)
+
+# =========================
+# PDF EXPORT
+# =========================
+st.subheader("📄 RAPOR EXPORT")
+
+def create_pdf(data):
+    buffer = BytesIO()
+    p = canvas.Canvas(buffer, pagesize=A4)
+
+    p.drawString(50, 800, "SCADA CMMS AI REPORT")
+    p.drawString(50, 780, f"System Health: {overall:.2f}")
+
+    y = 740
+    for i, row in risk_sorted.head(10).iterrows():
+        p.drawString(50, y, f"{i} | Score: {row['Score']:.1f} | MTTR: {row['MTTR']:.1f}")
+        y -= 20
+
+    p.save()
+    buffer.seek(0)
+    return buffer
+
+pdf = create_pdf(risk)
+
+st.download_button(
+    "📥 PDF Rapor İndir",
+    pdf,
+    file_name="scada_report.pdf",
+    mime="application/pdf"
+)
+
+# =========================
+# RAW DATA (ENGINEER VIEW)
+# =========================
+with st.expander("Engineer View"):
     st.dataframe(df, use_container_width=True)
