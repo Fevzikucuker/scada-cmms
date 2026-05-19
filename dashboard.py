@@ -31,24 +31,12 @@ h1,h2,h3 {
 """, unsafe_allow_html=True)
 
 # =========================
-# DATA LOAD (FIXED - STABLE)
+# DATA LOAD
 # =========================
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=5)
 def load_data():
-    import requests
-    from io import StringIO
-
-    url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRfxWf8ilCrbH4Bd8nVxeVTIuQSkCJDYIJUWEJ5SoD3GqkSVyC4f0hvDyXhm8DTJy4b3NY75dDwyGjP/pub?gid=543692092&single=true&output=csv"
-
-    try:
-        headers = {"User-Agent": "Mozilla/5.0"}
-        r = requests.get(url, headers=headers, timeout=15)
-        r.raise_for_status()
-        df = pd.read_csv(StringIO(r.text))
-
-    except Exception:
-        st.error("❌ Veri yüklenemedi (Google Sheets erişim sorunu)")
-        return pd.DataFrame()
+    url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRfxWf8ilCrbH4Bd8nVxeVTIuQSkCJDYIJUWEJ5SoD3GqkSVyC4f0hvDyXhm8DTJy4b3NY75dDwyGjK/pub?output=csv"
+    df = pd.read_csv(url)
 
     df.columns = df.columns.str.strip()
 
@@ -68,7 +56,7 @@ def load_data():
 df = load_data()
 
 # =========================
-# SIDEBAR (ONLY UPGRADED PART)
+# SIDEBAR (PRO SCADA PANEL)
 # =========================
 st.sidebar.markdown("""
 <div style="
@@ -84,7 +72,6 @@ st.sidebar.markdown("""
         text-align:center;
         margin:0;
         font-size:18px;
-        letter-spacing:1px;
     ">
         ⚙ SCADA CONTROL PANEL
     </h2>
