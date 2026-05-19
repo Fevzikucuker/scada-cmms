@@ -11,7 +11,7 @@ st_autorefresh(interval=10000, key="live")
 # =========================
 # CONFIG
 # =========================
-st.set_page_config(page_title="SCADA CMMS AI v4", layout="wide")
+st.set_page_config(page_title="SCADA CMMS AI v4.1", layout="wide")
 
 st.markdown("""
 <style>
@@ -46,7 +46,7 @@ def load_data():
 df = load_data()
 
 # =========================
-# SIDEBAR FILTERS (GERÇEK SCADA)
+# SIDEBAR FILTERS
 # =========================
 st.sidebar.title("🎛 SCADA CONTROL")
 
@@ -78,7 +78,7 @@ if len(tarih_aralik) == 2:
 df = df.sort_values(["Makine", "Baslangic"])
 
 # =========================
-# KPI CALC (FILTERED)
+# KPI CALC
 # =========================
 df["Onceki_Bitis"] = df.groupby("Makine")["Bitis"].shift(1)
 df["MTBF"] = (df["Baslangic"] - df["Onceki_Bitis"]).dt.total_seconds() / 60
@@ -108,10 +108,9 @@ risk["Score"] = risk["Score"].clip(0, 100)
 # =========================
 # HEADER
 # =========================
-st.title("🏭 SCADA CMMS AI v4 - FILTERED DASHBOARD")
+st.title("🏭 SCADA CMMS AI v4.1 - FULL FILTERED DASHBOARD")
 
 c1, c2, c3, c4 = st.columns(4)
-
 c1.metric("System Health", f"{risk['Score'].mean():.1f}")
 c2.metric("Critical Machines", len(risk[risk["Score"] < 60]))
 c3.metric("Avg MTBF", f"{mtbf.mean():.0f}")
@@ -171,3 +170,50 @@ fig_s = px.bar(
 )
 
 st.plotly_chart(fig_s, use_container_width=True)
+
+# =========================
+# 📉 TREND ANALYSIS (NEW)
+# =========================
+st.divider()
+
+st.subheader("📉 MTTR & ARIZA TREND")
+
+trend = df.copy()
+trend["Tarih"] = trend["Baslangic"].dt.date
+
+mttr_trend = trend.groupby("Tarih")["Durus_Dk"].mean().reset_index()
+ariza_trend = trend.groupby("Tarih").size().reset_index(name="Ariza_Sayisi")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    fig1 = px.line(mttr_trend, x="Tarih", y="Durus_Dk", markers=True)
+    st.plotly_chart(fig1, use_container_width=True)
+
+with col2:
+    fig2 = px.line(ariza_trend, x="Tarih", y="Ariza_Sayisi", markers=True)
+    st.plotly_chart(fig2, use_container_width=True)
+
+# =========================
+# 📋 EXCEL-LIKE TABLE (NEW)
+# =========================
+st.divider()
+
+st.subheader("📋 ARIZA KAYIT TABLOSU (EXCEL VIEW)")
+
+table_df = df[[
+    "Makine",
+    "Ariza_Tipi",
+    "Baslangic",
+    "Bitis",
+    "Durus_Dk",
+    "MTBF"
+]].copy()
+
+table_df = table_df.sort_values("Baslangic", ascending=False)
+
+st.dataframe(
+    table_df,
+    use_container_width=True,
+    height=400
+)
