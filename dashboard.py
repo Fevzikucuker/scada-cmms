@@ -3,8 +3,9 @@ import pandas as pd
 import plotly.express as px
 from streamlit_autorefresh import st_autorefresh
 from io import BytesIO
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
 
 # =========================
 # AUTO REFRESH
@@ -14,19 +15,12 @@ st_autorefresh(interval=10000, key="live")
 # =========================
 # CONFIG
 # =========================
-st.set_page_config(page_title="SCADA CMMS AI v2", layout="wide")
+st.set_page_config(page_title="SCADA CMMS AI v3", layout="wide")
 
 st.markdown("""
 <style>
 body { background-color: #0b1220; }
 h1,h2,h3 { color: #00ffe5; }
-
-.card {
-    background-color: #111827;
-    padding: 15px;
-    border-radius: 12px;
-    border: 1px solid #2dd4bf;
-}
 </style>
 """, unsafe_allow_html=True)
 
@@ -87,95 +81,117 @@ risk["Score"] = risk["Score"].clip(0, 100)
 # =========================
 # HEADER
 # =========================
-st.title("🏭 SCADA CMMS AI v2 – Hybrid Dashboard")
+st.title("🏭 SCADA CMMS AI DASHBOARD v3")
 
-st.divider()
-
-# =========================
-# EXECUTIVE SUMMARY
-# =========================
 overall = risk["Score"].mean()
 
-col1, col2, col3, col4 = st.columns(4)
-
-col1.metric("🏭 System Health", f"{overall:.1f}/100")
-col2.metric("🔴 Critical Machines", len(risk[risk["Score"] < 60]))
-col3.metric("⏱ Avg MTBF", f"{mtbf.mean():.0f} min")
-col4.metric("⚙ Total Failures", len(df))
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("System Health", f"{overall:.1f}")
+c2.metric("Critical Machines", len(risk[risk["Score"] < 60]))
+c3.metric("Avg MTBF", f"{mtbf.mean():.0f}")
+c4.metric("Total Failures", len(df))
 
 st.divider()
 
 # =========================
-# MACHINE STATUS (IMPORTANT PART RESTORED)
+# MTBF + PARETO (2 COL)
 # =========================
-st.subheader("🏭 MACHINE STATUS OVERVIEW")
+col1, col2 = st.columns(2)
 
-risk_sorted = risk.sort_values("Score")
+with col1:
+    st.subheader("📈 MTBF")
+    fig_mtbf = px.bar(mtbf.reset_index(), x="Makine", y="MTBF", color="MTBF")
+    st.plotly_chart(fig_mtbf, use_container_width=True)
 
-fig = px.bar(
-    risk_sorted.reset_index(),
+with col2:
+    st.subheader("📊 Pareto Analysis")
+
+    pareto = df["Ariza_Tipi"].value_counts().reset_index()
+    pareto.columns = ["Ariza_Tipi", "Adet"]
+
+    fig_p = px.bar(pareto, x="Ariza_Tipi", y="Adet", color="Adet")
+    st.plotly_chart(fig_p, use_container_width=True)
+
+st.divider()
+
+# =========================
+# HEATMAP
+# =========================
+st.subheader("🔥 Heatmap (Machine vs Failure)")
+
+heat = pd.crosstab(df["Makine"], df["Ariza_Tipi"])
+
+fig_h = px.imshow(
+    heat,
+    text_auto=True,
+    aspect="auto",
+    color_continuous_scale="Reds"
+)
+
+st.plotly_chart(fig_h, use_container_width=True)
+
+st.divider()
+
+# =========================
+# MACHINE STATUS
+# =========================
+st.subheader("🏭 Machine Health Overview")
+
+fig_score = px.bar(
+    risk.reset_index(),
     x="Makine",
     y="Score",
     color="Score",
-    text="Score",
     color_continuous_scale="RdYlGn"
 )
 
-fig.update_layout(height=500)
-st.plotly_chart(fig, use_container_width=True)
-
-# =========================
-# TOP CRITICAL
-# =========================
-st.subheader("🚨 Critical Machines")
-
-for i, row in risk_sorted.head(5).iterrows():
-    st.error(f"{i} → Score: {row['Score']:.1f} | MTTR: {row['MTTR']:.1f} | Arıza: {row['Ariza']}")
+st.plotly_chart(fig_score, use_container_width=True)
 
 st.divider()
 
 # =========================
-# TREND
+# PDF REPORT (PRO)
 # =========================
-st.subheader("📈 Failure Trend")
+def generate_pdf():
 
-trend = df.groupby(df["Baslangic"].dt.date).size().reset_index(name="Arıza")
-
-fig2 = px.line(trend, x="Baslangic", y="Arıza", markers=True)
-st.plotly_chart(fig2, use_container_width=True)
-
-# =========================
-# PDF EXPORT
-# =========================
-st.subheader("📄 RAPOR EXPORT")
-
-def create_pdf(data):
     buffer = BytesIO()
-    p = canvas.Canvas(buffer, pagesize=A4)
+    doc = SimpleDocTemplate(buffer)
+    styles = getSampleStyleSheet()
+    content = []
 
-    p.drawString(50, 800, "SCADA CMMS AI REPORT")
-    p.drawString(50, 780, f"System Health: {overall:.2f}")
+    content.append(Paragraph("SCADA CMMS MANAGEMENT REPORT", styles["Title"]))
+    content.append(Spacer(1, 12))
 
-    y = 740
-    for i, row in risk_sorted.head(10).iterrows():
-        p.drawString(50, y, f"{i} | Score: {row['Score']:.1f} | MTTR: {row['MTTR']:.1f}")
-        y -= 20
+    content.append(Paragraph(f"System Health: {overall:.2f}", styles["Heading2"]))
+    content.append(Paragraph(f"MTTR Avg: {mttr.mean():.2f}", styles["Normal"]))
+    content.append(Paragraph(f"MTBF Avg: {mtbf.mean():.2f}", styles["Normal"]))
+    content.append(Spacer(1, 12))
 
-    p.save()
+    top = risk.sort_values("Score").head(5)
+
+    table_data = [["Machine", "Score", "MTTR", "MTBF", "Failures"]]
+
+    for i, r in top.iterrows():
+        table_data.append([i, f"{r['Score']:.1f}", f"{r['MTTR']:.1f}", f"{r['MTBF']:.1f}", int(r["Ariza"])])
+
+    table = Table(table_data)
+    table.setStyle(TableStyle([
+        ("BACKGROUND",(0,0),(-1,0),colors.grey),
+        ("TEXTCOLOR",(0,0),(-1,0),colors.white),
+        ("GRID",(0,0),(-1,-1),0.5,colors.black)
+    ]))
+
+    content.append(table)
+    doc.build(content)
+
     buffer.seek(0)
     return buffer
 
-pdf = create_pdf(risk)
+pdf = generate_pdf()
 
 st.download_button(
-    "📥 PDF Rapor İndir",
+    "📥 Download Management PDF",
     pdf,
-    file_name="scada_report.pdf",
+    file_name="SCADA_REPORT_V3.pdf",
     mime="application/pdf"
 )
-
-# =========================
-# RAW DATA (ENGINEER VIEW)
-# =========================
-with st.expander("Engineer View"):
-    st.dataframe(df, use_container_width=True)
