@@ -31,12 +31,24 @@ h1,h2,h3 {
 """, unsafe_allow_html=True)
 
 # =========================
-# DATA LOAD
+# DATA LOAD (FIXED - STABLE)
 # =========================
-@st.cache_data(ttl=5)
+@st.cache_data(ttl=30)
 def load_data():
-    url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRfxWf8ilCrbH4Bd8nVxeVTIuQSkCJDYIJUWEJ5SoD3GqkSVyC4f0hvDyXhm8DTJy4b3NY75dDwyGjP/pub?output=csv"
-    df = pd.read_csv(url)
+    import requests
+    from io import StringIO
+
+    url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRfxWf8ilCrbH4Bd8nVxeVTIuQSkCJDYIJUWEJ5SoD3GqkSVyC4f0hvDyXhm8DTJy4b3NY75dDwyGjP/pub?gid=543692092&single=true&output=csv"
+
+    try:
+        headers = {"User-Agent": "Mozilla/5.0"}
+        r = requests.get(url, headers=headers, timeout=15)
+        r.raise_for_status()
+        df = pd.read_csv(StringIO(r.text))
+
+    except Exception:
+        st.error("❌ Veri yüklenemedi (Google Sheets erişim sorunu)")
+        return pd.DataFrame()
 
     df.columns = df.columns.str.strip()
 
