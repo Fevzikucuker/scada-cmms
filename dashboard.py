@@ -216,7 +216,7 @@ with col5:
 with col6:
     st.subheader("📊 Pareto")
     pareto = df["Ariza_Tipi"].value_counts().reset_index()
-    pareto.columns = ["Failure Types", "Total"]
+    pareto.columns = ["Ariza_Tipi", "Adet"]
 
     st.plotly_chart(px.bar(pareto, x="Ariza_Tipi", y="Adet", color="Adet"),
                     use_container_width=True)
@@ -225,10 +225,10 @@ with col6:
 # TABLE
 # =========================
 st.divider()
-st.subheader("📋 FAILURE RECORDING TABLE")
+st.subheader("📋 FAULT RECORDING TABLE")
 
 table_df = df[[
-    "Machines",
+    "Makine",
     "Ariza_Tipi",
     "Baslangic",
     "Bitis",
