@@ -35,7 +35,7 @@ h1,h2,h3 {
 # =========================
 @st.cache_data(ttl=5)
 def load_data():
-    url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRfxWf8ilCrbH4Bd8nVxeVTIuQSkCJDYIJUWEJ5SoD3GqkSVyC4f0hvDyXhm8DTJy4b3NY75dDwyGjK/pub?output=csv"
+    url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRfxWf8ilCrbH4Bd8nVxeVTIuQSkCJDYIJUWEJ5SoD3GqkSVyC4f0hvDyXhm8DTJy4b3NY75dDwyGjK/pub?gid=543692092&single=true&output=csv"
     df = pd.read_csv(url)
 
     df.columns = df.columns.str.strip()
@@ -73,7 +73,7 @@ st.sidebar.markdown("""
         margin:0;
         font-size:18px;
     ">
-        ⚙ SCADA CONTROL PANEL
+        ⚙ RELIABILITY COCKPIT v1.0
     </h2>
     <p style="
         color:#94a3b8;
@@ -81,7 +81,7 @@ st.sidebar.markdown("""
         font-size:12px;
         margin-top:6px;
     ">
-        Real-Time CMMS Monitoring
+       BHS TÜRKİYE MAINTENANCE TEAM
     </p>
 </div>
 """, unsafe_allow_html=True)
@@ -155,7 +155,7 @@ risk["Score"] = risk["Score"].clip(0, 100)
 # =========================
 # HEADER
 # =========================
-st.title("🏭 SCADA CMMS AI v4.2 - FULL DASHBOARD")
+st.title("BHS TÜRKİYE MAINTENANCE KPI TRACKING DASHBOARD")
 
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("System Health", f"{risk['Score'].mean():.1f}")
@@ -192,7 +192,7 @@ with col3:
                     use_container_width=True)
 
 with col4:
-    st.subheader("📉 Arıza Trend")
+    st.subheader("📉 Failure Trend")
     trend = df.copy()
     trend["Tarih"] = trend["Baslangic"].dt.date
     ariza_trend = trend.groupby("Tarih").size().reset_index(name="Ariza")
@@ -216,7 +216,7 @@ with col5:
 with col6:
     st.subheader("📊 Pareto")
     pareto = df["Ariza_Tipi"].value_counts().reset_index()
-    pareto.columns = ["Ariza_Tipi", "Adet"]
+    pareto.columns = ["Failure Types", "Total"]
 
     st.plotly_chart(px.bar(pareto, x="Ariza_Tipi", y="Adet", color="Adet"),
                     use_container_width=True)
@@ -225,10 +225,10 @@ with col6:
 # TABLE
 # =========================
 st.divider()
-st.subheader("📋 ARIZA KAYIT TABLOSU")
+st.subheader("📋 FAILURE RECORDING TABLE")
 
 table_df = df[[
-    "Makine",
+    "Machines",
     "Ariza_Tipi",
     "Baslangic",
     "Bitis",
