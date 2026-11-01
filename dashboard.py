@@ -1,7 +1,7 @@
-"""BHS Türkiye bakım KPI ekranı v4.3.
-Gereksinimler: pandas>=2.0, streamlit>=1.32, plotly>=5.18,
-streamlit-autorefresh>=1.0.1. Çalıştırma: streamlit run dashboard.py
-Tarih filtresi arıza AÇILIŞ tarihine uygulanır. Durus_Dk dakika kabul edilir.
+"""BHS Türkiye maintenance KPI dashboard v4.3.
+Requirements: pandas>=2.0, streamlit>=1.32, plotly>=5.18,
+streamlit-autorefresh>=1.0.1. Run: streamlit run dashboard.py
+The date filter applies to fault OPENING dates. Durus_Dk is measured in minutes.
 """
 from datetime import datetime
 from io import StringIO
@@ -36,9 +36,20 @@ def prepare_data(raw, dayfirst=True):
     required = ['Makine', 'Baslangic', 'Bitis', 'Durus_Dk', 'Ariza_Tipi']
     missing = [c for c in required if c not in df]
     if missing:
-        raise ValueError('Eksik kolonlar: ' + ', '.join(missing))
+        raise ValueError('Missing columns: ' + ', '.join(missing))
     df['Makine'] = df['Makine'].astype('string').str.strip().replace('', pd.NA)
-    df['Ariza_Tipi'] = df['Ariza_Tipi'].astype('string').str.strip().fillna('Belirtilmemiş').replace('', 'Belirtilmemiş')
+    df['Ariza_Tipi'] = df['Ariza_Tipi'].astype('string').str.strip().fillna('Unspecified').replace('', 'Unspecified')
+    fault_labels = {
+        'MEKANİK SİSTEMLER - MECHANICAL SYSTEMS': 'Mechanical systems',
+        'PNÖMATİK SİSTEMLER  - PNEUMATIC SYSTEMS': 'Pneumatic systems',
+        'ELEKTRİK EKİPMANLARI - ELECTRICAL EQUIPMENT': 'Electrical equipment',
+        'BİNA/ÇELİK YAPILAR - BUILDING/CONSTRUCTION': 'Building / construction',
+        'HİDROLİK SİSTEMLER - HYDRAULIC SYSTEMS': 'Hydraulic systems',
+        'OTOMASYON/YAZILIM - SOFTWARE': 'Automation / software',
+        'Elektrik': 'Electrical', 'Mekanik': 'Mechanical',
+        'Hidrolik': 'Hydraulic', 'Pnömatik': 'Pneumatic',
+    }
+    df['Ariza_Tipi'] = df['Ariza_Tipi'].replace(fault_labels)
     raw_end = df['Bitis'].astype('string').str.strip()
     df['Acik'] = raw_end.isna() | raw_end.eq('')
     df['Baslangic'] = parse_dates(df['Baslangic'], dayfirst)
@@ -55,18 +66,18 @@ def prepare_data(raw, dayfirst=True):
     closed_valid = df['Bitis'].notna() & df['Baslangic'].notna() & chronological
     df['Durus_Dk'] = numeric.where(closed_valid)
     df['Veri_Uyarisi'] = ''
-    df.loc[df['Baslangic'].isna(), 'Veri_Uyarisi'] += 'Başlangıç tarihi geçersiz; '
-    df.loc[df['Makine'].isna(), 'Veri_Uyarisi'] += 'Makine eksik; '
-    df.loc[~df['Acik'] & ~closed_valid, 'Veri_Uyarisi'] += 'Kapanış tarihi geçersiz; '
-    df.loc[closed_valid & ~has_time, 'Veri_Uyarisi'] += 'Kapanış saati yok; aralık hesabında kullanılmaz; '
-    df.loc[closed_valid & numeric.isna(), 'Veri_Uyarisi'] += 'Duruş dakikası geçersiz; '
+    df.loc[df['Baslangic'].isna(), 'Veri_Uyarisi'] += 'Invalid start date; '
+    df.loc[df['Makine'].isna(), 'Veri_Uyarisi'] += 'Missing machine; '
+    df.loc[~df['Acik'] & ~closed_valid, 'Veri_Uyarisi'] += 'Invalid closing date; '
+    df.loc[closed_valid & ~has_time, 'Veri_Uyarisi'] += 'Closing time missing; excluded from interval calculation; '
+    df.loc[closed_valid & numeric.isna(), 'Veri_Uyarisi'] += 'Invalid downtime minutes; '
     # Önce tüm geçmişte önceki kayıt bulunur; dönem filtresi bundan sonra uygulanır.
     df = df.sort_values(['Makine', 'Baslangic'], kind='stable', na_position='last')
     end = df['Bitis'].where(closed_valid & has_time)
     df['Onceki_Bitis'] = end.groupby(df['Makine']).shift(1)
     gap = (df['Baslangic'] - df['Onceki_Bitis']).dt.total_seconds() / 60
     df['Aralik_Dk'] = gap.where(gap > 0)
-    df.loc[gap.notna() & (gap <= 0), 'Veri_Uyarisi'] += 'Çakışan/eşzamanlı kayıt; '
+    df.loc[gap.notna() & (gap <= 0), 'Veri_Uyarisi'] += 'Overlapping/simultaneous record; '
     return df
 
 
@@ -113,12 +124,12 @@ def horizontal(summary, value, label, color, key, limit):
     data = summary.reset_index().dropna(subset=[value])
     data = data.sort_values(value, ascending=(value == 'Score')).head(limit)
     if data.empty:
-        st.info('Bu gösterge için yeterli geçerli veri yok.')
+        st.info('Insufficient valid data for this indicator.')
         return
     if value == 'Aralik':
         data[value] = data[value] / 60
     fig = px.bar(data, x=value, y='Makine', orientation='h', text=value,
-                 labels={value: label, 'Makine': ''}, color_discrete_sequence=[color])
+                 labels={value: label, 'Makine': 'Machine'}, color_discrete_sequence=[color])
     fig.update_traces(texttemplate='%{x:.1f}', textposition='outside', cliponaxis=False)
     fig.update_yaxes(categoryorder='array', categoryarray=data['Makine'].tolist()[::-1], automargin=True)
     if value == 'Score':
@@ -129,11 +140,23 @@ def horizontal(summary, value, label, color, key, limit):
 
 
 def fmt(value, digits=1):
-    return '—' if pd.isna(value) else f'{value:,.{digits}f}'.replace(',', '_').replace('.', ',').replace('_', '.')
+    return '—' if pd.isna(value) else f'{value:,.{digits}f}'
+
+
+
+DISPLAY_COLUMNS = {
+    'Makine': 'Machine', 'Ariza_Tipi': 'Fault type', 'Baslangic': 'Opened at',
+    'Bitis': 'Closed at', 'Acik': 'Open record', 'Durus_Dk': 'Downtime (min)',
+    'Aralik_Dk': 'Calendar interval (min)', 'Kapanis_Saati_Var': 'Closing time available',
+    'Veri_Uyarisi': 'Data warning', 'Onceki_Bitis': 'Previous closure',
+}
+
+def display_records(frame):
+    return frame.rename(columns=DISPLAY_COLUMNS)
 
 
 def main():
-    st.set_page_config(page_title='BHS | Bakım KPI v4.3', page_icon='⚙️', layout='wide')
+    st.set_page_config(page_title='BHS | Maintenance KPI v4.3 EN', page_icon='⚙️', layout='wide')
     st.markdown('''<style>
     .stApp {background:#0b1220; color:#dbe7f3}
     [data-testid="stSidebar"] {background:#111c2e}
@@ -143,134 +166,134 @@ def main():
     h1 {font-size:1.85rem !important} h2,h3 {color:#5eead4 !important}
     </style>''', unsafe_allow_html=True)
     st.sidebar.title('⚙ Reliability Cockpit')
-    st.sidebar.caption('BHS TÜRKİYE · BAKIM EKİBİ · v4.3')
-    refresh = st.sidebar.checkbox('10 saniyede bir yenile', value=True)
+    st.sidebar.caption('BHS TÜRKİYE · MAINTENANCE TEAM · v4.3 EN')
+    refresh = st.sidebar.checkbox('Refresh every 10 seconds', value=True)
     if refresh:
         st_autorefresh(interval=10000, key='live')
-    if st.sidebar.button('Veriyi şimdi yenile'):
+    if st.sidebar.button('Refresh data now'):
         load_data.clear()
-    dayfirst = st.sidebar.selectbox('Kaynak tarih düzeni', ['Gün / Ay / Yıl', 'Ay / Gün / Yıl']) == 'Gün / Ay / Yıl'
+    dayfirst = st.sidebar.selectbox('Source date format', ['Day / Month / Year', 'Month / Day / Year']) == 'Day / Month / Year'
     stale = False
     try:
         raw, fetched = load_data(CSV_URL)
         st.session_state['last_good'] = (raw, fetched)
     except Exception as exc:
         if 'last_good' not in st.session_state:
-            st.error('Veri kaynağı okunamadı. Google Sheets CSV yayın bağlantısını kontrol edin.')
+            st.error('Unable to read the data source. Check the published Google Sheets CSV link.')
             st.caption(str(exc))
             st.stop()
         raw, fetched = st.session_state['last_good']
         stale = True
-        st.warning('Veri yenilenemedi. Son başarılı okumadaki kayıtlar gösteriliyor.')
+        st.warning('Refresh failed. Showing records from the last successful data fetch.')
     try:
         all_data = prepare_data(raw, dayfirst)
     except Exception as exc:
-        st.error(f'Veri hazırlanamadı: {exc}')
+        st.error(f'Unable to prepare data: {exc}')
         st.stop()
-    st.sidebar.caption(('⚠ Eski veri' if stale else '✓ CSV verisi okundu') + '\n\nSon başarılı okuma (Türkiye): ' + fetched.strftime('%d.%m.%Y %H:%M:%S'))
+    st.sidebar.caption(('⚠ Stale data' if stale else '✓ CSV data loaded') + '\n\nLast successful fetch (Türkiye time): ' + fetched.strftime('%d.%m.%Y %H:%M:%S'))
     valid = all_data.dropna(subset=['Baslangic', 'Makine'])
     if valid.empty:
-        st.warning('Geçerli makine ve başlangıç tarihi içeren kayıt bulunamadı.')
-        st.dataframe(all_data, use_container_width=True)
+        st.warning('No records with a valid machine and start date were found.')
+        st.dataframe(display_records(all_data), use_container_width=True)
         st.stop()
     machines = sorted(valid['Makine'].unique())
-    selected = st.sidebar.multiselect('Makine seçimi', machines, default=machines)
-    dates = st.sidebar.date_input('Arıza açılış tarih aralığı',
+    selected = st.sidebar.multiselect('Machine selection', machines, default=machines)
+    dates = st.sidebar.date_input('Fault opening date range',
         value=(valid['Baslangic'].min().date(), valid['Baslangic'].max().date()))
-    limit = st.sidebar.selectbox('Grafik başına makine sayısı', sorted(set([10, 15, 20, len(machines)])), index=1)
-    st.title('BHS TÜRKİYE | Bakım Performansı')
-    st.caption('Arıza kayıtları · Onarım süreleri · Bakım öncelikleri')
+    limit = st.sidebar.selectbox('Machines per chart', sorted(set([10, 15, 20, len(machines)])), index=1)
+    st.title('BHS TÜRKİYE | Maintenance Performance')
+    st.caption('Fault records · Repair times · Maintenance priorities')
     if len(dates) != 2:
-        st.info('Başlangıç ve bitiş tarihini seçin.')
+        st.info('Select a start and end date.')
         st.stop()
     period = select_period(valid, dates[0], dates[1])
     data = period[period['Makine'].isin(selected)].copy()
     if data.empty:
-        st.info('Seçilen makine ve tarih aralığında kayıt bulunmuyor.')
+        st.info('No records for the selected machines and date range.')
         st.stop()
     summary = add_score(summarize(period)).reindex([m for m in selected if m in set(data['Makine'])])
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric('Toplam arıza kaydı', len(data))
-    c2.metric('Açık kayıt', int(data['Acik'].sum()))
-    c3.metric('Kayıtlı duruş (saat)', fmt(data['Durus_Dk'].sum(min_count=1)/60))
-    c4.metric('Ort. onarım / MTTR (dk)', fmt(data['Durus_Dk'].mean()))
-    st.caption('Kartlar seçili dönemde açılan kayıtlara aittir. Açık kayıt = kapanış alanı boş. '
-               'Duruş ve MTTR yalnızca geçerli kapanış ve süre içeren kayıtlardan hesaplanır; '
-               'duruş toplamı kayıtların toplamıdır, çakışmalar birleştirilmez.')
-    st.caption(f"Süre hesabına katılan kayıt: {data['Durus_Dk'].count()} / {len(data)} · "
-               f"Geçerli arızalar arası süre: {data['Aralik_Dk'].count()}")
-    overview, reliability, records = st.tabs(['📊 Arıza analizi', '🏭 Makine göstergeleri', '📋 Kayıtlar ve veri kalitesi'])
+    c1.metric('Total fault records', len(data))
+    c2.metric('Open records', int(data['Acik'].sum()))
+    c3.metric('Recorded downtime (hours)', fmt(data['Durus_Dk'].sum(min_count=1)/60))
+    c4.metric('Average repair / MTTR (min)', fmt(data['Durus_Dk'].mean()))
+    st.caption('Cards refer to records opened during the selected period. Open record = blank closing field. '
+               'Downtime and MTTR include only records with valid closure and duration; '
+               'downtime is summed across records; overlapping durations are not merged.')
+    st.caption(f"Records included in duration calculations: {data['Durus_Dk'].count()} / {len(data)} · "
+               f"Valid inter-failure intervals: {data['Aralik_Dk'].count()}")
+    overview, reliability, records = st.tabs(['📊 Fault analysis', '🏭 Machine indicators', '📋 Records and data quality'])
     with overview:
         left, right = st.columns(2)
         with left:
-            st.subheader('En uzun ortalama onarım')
-            horizontal(summary, 'MTTR', 'Ortalama onarım (dk)', '#fb7185', 'mttr', limit)
+            st.subheader('Longest average repair time')
+            horizontal(summary, 'MTTR', 'Average repair time (min)', '#fb7185', 'mttr', limit)
         with right:
-            st.subheader('En çok arıza kaydı')
-            horizontal(summary, 'Ariza', 'Arıza kaydı (adet)', '#38bdf8', 'counts', limit)
+            st.subheader('Most fault records')
+            horizontal(summary, 'Ariza', 'Fault records (count)', '#38bdf8', 'counts', limit)
         left, right = st.columns(2)
         with left:
-            st.subheader('Arıza trendi')
-            frequency = st.radio('Gruplama', ['Günlük', 'Haftalık', 'Aylık'], horizontal=True, index=1)
-            rule = {'Günlük':'D', 'Haftalık':'W-MON', 'Aylık':'MS'}[frequency]
+            st.subheader('Fault trend')
+            frequency = st.radio('Group by', ['Daily', 'Weekly', 'Monthly'], horizontal=True, index=1)
+            rule = {'Daily':'D', 'Weekly':'W-MON', 'Monthly':'MS'}[frequency]
             daily = data.groupby(data['Baslangic'].dt.normalize()).size().reindex(pd.date_range(dates[0], dates[1]), fill_value=0)
             trend = daily.resample(rule, label='left', closed='left').sum().rename('Arıza').rename_axis('Tarih').reset_index()
-            st.plotly_chart(style_chart(px.line(trend, x='Tarih', y='Arıza', markers=True, color_discrete_sequence=['#2dd4bf'])), use_container_width=True)
+            st.plotly_chart(style_chart(px.line(trend, x='Tarih', y='Arıza', labels={'Tarih': 'Date', 'Arıza': 'Fault count'}, markers=True, color_discrete_sequence=['#2dd4bf'])), use_container_width=True)
         with right:
-            st.subheader('Arıza tipine göre Pareto')
+            st.subheader('Pareto by fault type')
             pareto = data['Ariza_Tipi'].value_counts().rename_axis('Tip').reset_index(name='Adet')
             pareto['Yuzde'] = pareto['Adet'].cumsum()/pareto['Adet'].sum()*100
             fig = make_subplots(specs=[[{'secondary_y':True}]])
-            fig.add_trace(go.Bar(x=pareto['Tip'], y=pareto['Adet'], name='Arıza adedi', marker_color='#38bdf8'), secondary_y=False)
-            fig.add_trace(go.Scatter(x=pareto['Tip'], y=pareto['Yuzde'], name='Kümülatif %', mode='lines+markers', line_color='#fbbf24'), secondary_y=True)
-            fig.update_yaxes(title_text='Adet', secondary_y=False)
-            fig.update_yaxes(title_text='Kümülatif %', range=[0, 105], secondary_y=True)
+            fig.add_trace(go.Bar(x=pareto['Tip'], y=pareto['Adet'], name='Fault count', marker_color='#38bdf8'), secondary_y=False)
+            fig.add_trace(go.Scatter(x=pareto['Tip'], y=pareto['Yuzde'], name='Cumulative %', mode='lines+markers', line_color='#fbbf24'), secondary_y=True)
+            fig.update_yaxes(title_text='Count', secondary_y=False)
+            fig.update_yaxes(title_text='Cumulative %', range=[0, 105], secondary_y=True)
             fig.add_hline(y=80, line_dash='dot', line_color='#94a3b8', secondary_y=True)
             fig.update_layout(legend=dict(orientation='h', y=1.15))
             st.plotly_chart(style_chart(fig, 490), use_container_width=True)
-        st.subheader('Makine / arıza tipi yoğunluğu')
+        st.subheader('Machine / fault type heatmap')
         heat = pd.crosstab(data['Makine'], data['Ariza_Tipi'])
         heat = heat.loc[heat.sum(axis=1).sort_values(ascending=False).index]
-        fig = px.imshow(heat, text_auto=True, aspect='auto', color_continuous_scale='Blues', labels=dict(x='Arıza tipi', y='Makine', color='Adet'))
+        fig = px.imshow(heat, text_auto=True, aspect='auto', color_continuous_scale='Blues', labels=dict(x='Fault type', y='Machine', color='Count'))
         st.plotly_chart(style_chart(fig, max(420, len(heat)*29+100)), use_container_width=True)
     with reliability:
-        st.info('Çalışma saati verisi olmadığı için gerçek çalışma süresine dayalı MTBF hesaplanmıyor. '
-                'Aşağıdaki süre, önceki arızanın kapanışı ile sonraki arızanın açılışı arasındaki takvim süresidir; gece ve tatilleri içerir.')
+        st.info('Operating-hour data is unavailable, so operating-time MTBF is not calculated. '
+                'The interval below is calendar time between the previous fault closure and the next fault opening; it includes nights and holidays.')
         c1, c2, c3 = st.columns(3)
-        c1.metric('Arızalar arası takvim süresi (saat)', fmt(data['Aralik_Dk'].mean()/60))
-        c2.metric('Göreli sağlık puanı / 100', fmt(summary['Score'].mean()))
-        c3.metric('Puanı 60 altında olan makine', int((summary['Score'] < 60).sum()))
-        st.caption(f"Puan hesaplanan makine: {summary['Score'].count()} / {len(summary)}. Eksik veri sıfır puana dönüştürülmez.")
+        c1.metric('Calendar interval between faults (hours)', fmt(data['Aralik_Dk'].mean()/60))
+        c2.metric('Relative health score / 100', fmt(summary['Score'].mean()))
+        c3.metric('Machines with score below 60', int((summary['Score'] < 60).sum()))
+        st.caption(f"Machines with a calculated score: {summary['Score'].count()} / {len(summary)}. Missing data is not converted to a zero score.")
         left, right = st.columns(2)
         with left:
-            st.subheader('Arızalar arası takvim süresi')
-            horizontal(summary, 'Aralik', 'Takvim süresi (saat)', '#2dd4bf', 'interval', limit)
+            st.subheader('Calendar interval between faults')
+            horizontal(summary, 'Aralik', 'Calendar interval (hours)', '#2dd4bf', 'interval', limit)
         with right:
-            st.subheader('En düşük göreli sağlık puanları')
-            horizontal(summary, 'Score', 'Göreli puan / 100', '#2dd4bf', 'health', limit)
-        with st.expander('Hesaplama yöntemleri ve sınırlar', expanded=True):
-            st.markdown('''- **MTTR:** geçerli kapanmış kayıtların `STOPPAGE TIME` ortalaması (dakika). Bu alan bekleme süresi de içeriyorsa saf aktif onarım süresi değildir.
-- **Takvim aralığı:** tüm geçmişte aynı makinenin bir önceki kaydının kapanışından mevcut kaydın açılışına kadar geçen pozitif süre. Dönem öncesi kapanış kullanılabilir. Saati eksik/açık/bozuk önceki kapanış ve çakışmalar ortalamaya alınmaz; kayıtlar silinmez.
-- **Göreli puan:** 100 − (normalize MTTR × 40 + normalize arıza adedi × 35 + ters normalize takvim aralığı × 25). Aynı dönemdeki tüm makineler referans alınır; makine seçimi referansı değiştirmez. Tarih aralığı ve kaynak kayıtları değişince puan değişebilir.
-- **60 puan eşiği** bir görüntüleme kuralıdır; standart bir risk veya kullanılabilirlik sınırı değildir. Bu puan gerçek MTBF yerine takvim aralığı kullanır ve bakım önceliklendirmesine yardımcı bir göstergedir.
-- Sabit hedefler henüz tanımlanmadığından yeni hedef değerler varsayılmadı. Üretim çalışma saatleri eklendiğinde MTBF ve hedef bazlı puanlama ayrıca kurulmalıdır.''')
-        display = summary.rename(columns={'Ariza':'Arıza adedi', 'Acik':'Açık kayıt', 'MTTR':'MTTR (dk)', 'Durus':'Duruş (dk)', 'Gecerli_Durus':'Süreli kayıt', 'Aralik':'Takvim aralığı (dk)', 'Aralik_Adet':'Aralık sayısı', 'Score':'Göreli puan'})
-        st.dataframe(display, use_container_width=True)
+            st.subheader('Lowest relative health scores')
+            horizontal(summary, 'Score', 'Relative score / 100', '#2dd4bf', 'health', limit)
+        with st.expander('Calculation methods and limitations', expanded=True):
+            st.markdown("""- **MTTR:** average `STOPPAGE TIME` for valid closed records, in minutes. If this field includes waiting time, it is not pure active repair time.
+- **Calendar interval:** positive elapsed time from the previous record's closure to the current record's opening for the same machine across the full history. A closure before the selected period may be used. Missing closing times, open/invalid previous closures and overlaps are excluded from the average; records are retained.
+- **Relative score:** 100 − (normalized MTTR × 40 + normalized fault count × 35 + inverse-normalized calendar interval × 25). All machines in the same period form the reference; machine selection does not change it. Scores can change when the date range or source data changes.
+- **The 60-point threshold** is a display rule, not a standard risk or availability limit. The score uses calendar intervals instead of operating-time MTBF and is an aid to maintenance prioritization.
+- Fixed targets have not been defined, so no target values were assumed. Operating-time MTBF and target-based scoring require production operating-hour data.""")
+        display = summary.rename(columns={'Ariza':'Fault count', 'Acik':'Open records', 'MTTR':'MTTR (min)', 'Durus':'Downtime (min)', 'Gecerli_Durus':'Records with valid duration', 'Aralik':'Calendar interval (min)', 'Aralik_Adet':'Interval count', 'Score':'Relative score'})
+        st.dataframe(display.rename_axis('Machine'), use_container_width=True)
     with records:
-        st.info('Kapanış yalnızca tarih içeriyorsa tabloda 00:00:00 görünebilir; bu gerçek kapanış saati değildir. Kapanis_Saati_Var alanı bu ayrımı gösterir. Saat eksikse sonraki arızanın takvim aralığı hesaplanmaz.')
-        st.caption('Tarih yorumlama varsayılanı Gün/Ay/Yıl. Kaynak Ay/Gün/Yıl ise soldan değiştirin. STOPPAGE TIME sayısal dakika olmalıdır.')
+        st.info('Date-only closures may appear as 00:00:00 in the table; this is not the actual closing time. The Closing time available field indicates this distinction. Without a closing time, the next fault interval is not calculated.')
+        st.caption('The default source date format is Day/Month/Year. Change it in the sidebar if your source uses Month/Day/Year. STOPPAGE TIME must contain numeric minutes.')
         columns = ['Makine', 'Ariza_Tipi', 'Baslangic', 'Bitis', 'Acik', 'Durus_Dk', 'Aralik_Dk', 'Kapanis_Saati_Var', 'Veri_Uyarisi']
-        table = data[columns].sort_values('Baslangic', ascending=False)
+        table = display_records(data[columns].sort_values('Baslangic', ascending=False))
         st.dataframe(table, use_container_width=True, height=480)
-        st.download_button('Seçili kayıtları CSV indir', table.to_csv(index=False).encode('utf-8-sig'), 'bakim_kayitlari.csv', 'text/csv')
+        st.download_button('Download selected records as CSV', table.to_csv(index=False).encode('utf-8-sig'), 'maintenance_records.csv', 'text/csv')
         excluded = all_data[all_data['Baslangic'].isna() | all_data['Makine'].isna()]
-        st.caption(f'Kaynağın tamamında tarih/makine eksikliği nedeniyle dönem analizine alınamayan kayıt: {len(excluded)}')
+        st.caption(f'Source records excluded from period analysis due to a missing/invalid date or machine: {len(excluded)}')
         if not excluded.empty:
-            st.dataframe(excluded[columns], use_container_width=True)
+            st.dataframe(display_records(excluded[columns]), use_container_width=True)
         issues = data[data['Veri_Uyarisi'].ne('')]
-        st.caption(f'Seçili dönemde veri uyarısı bulunan kayıt: {len(issues)}')
+        st.caption(f'Selected-period records with data warnings: {len(issues)}')
         if not issues.empty:
-            st.dataframe(issues[columns], use_container_width=True)
+            st.dataframe(display_records(issues[columns]), use_container_width=True)
 
 
 if __name__ == '__main__':
