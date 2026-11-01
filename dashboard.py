@@ -130,8 +130,9 @@ def horizontal(summary, value, label, color, key, limit):
         data[value] = data[value] / 60
     fig = px.bar(data, x=value, y='Makine', orientation='h', text=value,
                  labels={value: label, 'Makine': 'Machine'}, color_discrete_sequence=[color])
-    fig.update_traces(texttemplate='%{x:.1f}', textposition='outside', cliponaxis=False)
+    fig.update_traces(texttemplate='%{x:.0f}' if value == 'Ariza' else '%{x:.1f}', textposition='outside', cliponaxis=False)
     fig.update_yaxes(categoryorder='array', categoryarray=data['Makine'].tolist()[::-1], automargin=True)
+    fig.update_yaxes(title_text=None)
     if value == 'Score':
         fig.update_traces(marker=dict(color=data[value], colorscale='RdYlGn', cmin=0, cmax=100))
         fig.update_xaxes(range=[0, 110])
@@ -156,23 +157,33 @@ def display_records(frame):
 
 
 def main():
-    st.set_page_config(page_title='BHS | Maintenance KPI v4.3 EN', page_icon='⚙️', layout='wide')
+    st.set_page_config(page_title='BHS | Maintenance KPI v4.4 EN', page_icon='⚙️', layout='wide')
     st.markdown('''<style>
     .stApp {background:#0b1220; color:#dbe7f3}
     [data-testid="stSidebar"] {background:#111c2e}
     .block-container {padding-top:2rem; padding-bottom:2rem}
     [data-testid="stMetric"] {background:#111c2e; border:1px solid #22344c;
       border-radius:12px; padding:16px; border-top:3px solid #2dd4bf}
-    h1 {font-size:1.85rem !important} h2,h3 {color:#5eead4 !important}
+    h1 {font-size:1.65rem !important; font-weight:700 !important; letter-spacing:0.025em}
+    h2,h3 {color:#5eead4 !important; font-size:1.1rem !important;
+      font-weight:650 !important; letter-spacing:0.045em}
+    [data-testid="stSidebar"] h1 {font-size:1.25rem !important}
+    [data-testid="stMetricLabel"] p {font-size:0.82rem !important;
+      font-weight:650 !important; letter-spacing:0.05em; color:#a8bed3}
+    [data-testid="stMetricValue"] {font-size:2rem !important; font-weight:600}
+    [data-baseweb="tab"] {font-weight:650; letter-spacing:0.045em}
+    [data-testid="stWidgetLabel"] p {font-weight:600; letter-spacing:0.02em}
+    [data-testid="stCaptionContainer"] {color:#94a3b8}
+    
     </style>''', unsafe_allow_html=True)
-    st.sidebar.title('⚙ Reliability Cockpit')
-    st.sidebar.caption('BHS TÜRKİYE · MAINTENANCE TEAM · v4.3 EN')
-    refresh = st.sidebar.checkbox('Refresh every 10 seconds', value=True)
+    st.sidebar.title('MAINTENANCE KPI')
+    st.sidebar.caption('BHS TÜRKİYE · v4.4 EN')
+    refresh = st.sidebar.checkbox('AUTO REFRESH · 10 SEC', value=True)
     if refresh:
         st_autorefresh(interval=10000, key='live')
-    if st.sidebar.button('Refresh data now'):
+    if st.sidebar.button('REFRESH DATA'):
         load_data.clear()
-    dayfirst = st.sidebar.selectbox('Source date format', ['Day / Month / Year', 'Month / Day / Year']) == 'Day / Month / Year'
+    dayfirst = st.sidebar.selectbox('DATE FORMAT', ['Day / Month / Year', 'Month / Day / Year']) == 'Day / Month / Year'
     stale = False
     try:
         raw, fetched = load_data(CSV_URL)
@@ -197,12 +208,11 @@ def main():
         st.dataframe(display_records(all_data), use_container_width=True)
         st.stop()
     machines = sorted(valid['Makine'].unique())
-    selected = st.sidebar.multiselect('Machine selection', machines, default=machines)
-    dates = st.sidebar.date_input('Fault opening date range',
+    selected = st.sidebar.multiselect('MACHINES', machines, default=machines)
+    dates = st.sidebar.date_input('DATE RANGE',
         value=(valid['Baslangic'].min().date(), valid['Baslangic'].max().date()))
-    limit = st.sidebar.selectbox('Machines per chart', sorted(set([10, 15, 20, len(machines)])), index=1)
-    st.title('BHS TÜRKİYE | Maintenance Performance')
-    st.caption('Fault records · Repair times · Maintenance priorities')
+    limit = st.sidebar.selectbox('MACHINES PER CHART', sorted(set([10, 15, 20, len(machines)])), index=1)
+    st.title('BHS TÜRKİYE | MAINTENANCE DASHBOARD')
     if len(dates) != 2:
         st.info('Select a start and end date.')
         st.stop()
@@ -213,34 +223,35 @@ def main():
         st.stop()
     summary = add_score(summarize(period)).reindex([m for m in selected if m in set(data['Makine'])])
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric('Total fault records', len(data))
-    c2.metric('Open records', int(data['Acik'].sum()))
-    c3.metric('Recorded downtime (hours)', fmt(data['Durus_Dk'].sum(min_count=1)/60))
-    c4.metric('Average repair / MTTR (min)', fmt(data['Durus_Dk'].mean()))
-    st.caption('Cards refer to records opened during the selected period. Open record = blank closing field. '
-               'Downtime and MTTR include only records with valid closure and duration; '
-               'downtime is summed across records; overlapping durations are not merged.')
-    st.caption(f"Records included in duration calculations: {data['Durus_Dk'].count()} / {len(data)} · "
-               f"Valid inter-failure intervals: {data['Aralik_Dk'].count()}")
-    overview, reliability, records = st.tabs(['📊 Fault analysis', '🏭 Machine indicators', '📋 Records and data quality'])
+    c1.metric('TOTAL FAULTS', len(data))
+    c2.metric('OPEN RECORDS', int(data['Acik'].sum()))
+    c3.metric('DOWNTIME (H)', fmt(data['Durus_Dk'].sum(min_count=1)/60))
+    c4.metric('MTTR (MIN)', fmt(data['Durus_Dk'].mean()))
+    overview, reliability, records = st.tabs(['OVERVIEW', 'RELIABILITY', 'RECORDS'])
+    with st.expander('DATA COVERAGE', expanded=False):
+        st.caption('Cards refer to records opened during the selected period. Open record = blank closing field. '
+                   'Downtime and MTTR include only records with valid closure and duration; '
+                   'downtime is summed across records; overlapping durations are not merged.')
+        st.caption(f"Records included in duration calculations: {data['Durus_Dk'].count()} / {len(data)} · "
+                   f"Valid inter-failure intervals: {data['Aralik_Dk'].count()}")
     with overview:
         left, right = st.columns(2)
         with left:
-            st.subheader('Longest average repair time')
-            horizontal(summary, 'MTTR', 'Average repair time (min)', '#fb7185', 'mttr', limit)
+            st.subheader('MTTR (MIN)')
+            horizontal(summary, 'MTTR', 'MINUTES', '#fb7185', 'mttr', limit)
         with right:
-            st.subheader('Most fault records')
-            horizontal(summary, 'Ariza', 'Fault records (count)', '#38bdf8', 'counts', limit)
+            st.subheader('FAULT COUNT')
+            horizontal(summary, 'Ariza', 'COUNT', '#38bdf8', 'counts', limit)
         left, right = st.columns(2)
         with left:
-            st.subheader('Fault trend')
-            frequency = st.radio('Group by', ['Daily', 'Weekly', 'Monthly'], horizontal=True, index=1)
+            st.subheader('FAULT TREND')
+            frequency = st.radio('PERIOD', ['Daily', 'Weekly', 'Monthly'], horizontal=True, index=1)
             rule = {'Daily':'D', 'Weekly':'W-MON', 'Monthly':'MS'}[frequency]
             daily = data.groupby(data['Baslangic'].dt.normalize()).size().reindex(pd.date_range(dates[0], dates[1]), fill_value=0)
             trend = daily.resample(rule, label='left', closed='left').sum().rename('Arıza').rename_axis('Tarih').reset_index()
             st.plotly_chart(style_chart(px.line(trend, x='Tarih', y='Arıza', labels={'Tarih': 'Date', 'Arıza': 'Fault count'}, markers=True, color_discrete_sequence=['#2dd4bf'])), use_container_width=True)
         with right:
-            st.subheader('Pareto by fault type')
+            st.subheader('FAULT PARETO')
             pareto = data['Ariza_Tipi'].value_counts().rename_axis('Tip').reset_index(name='Adet')
             pareto['Yuzde'] = pareto['Adet'].cumsum()/pareto['Adet'].sum()*100
             fig = make_subplots(specs=[[{'secondary_y':True}]])
@@ -251,41 +262,41 @@ def main():
             fig.add_hline(y=80, line_dash='dot', line_color='#94a3b8', secondary_y=True)
             fig.update_layout(legend=dict(orientation='h', y=1.15))
             st.plotly_chart(style_chart(fig, 490), use_container_width=True)
-        st.subheader('Machine / fault type heatmap')
+        st.subheader('FAULT HEATMAP')
         heat = pd.crosstab(data['Makine'], data['Ariza_Tipi'])
         heat = heat.loc[heat.sum(axis=1).sort_values(ascending=False).index]
         fig = px.imshow(heat, text_auto=True, aspect='auto', color_continuous_scale='Blues', labels=dict(x='Fault type', y='Machine', color='Count'))
         st.plotly_chart(style_chart(fig, max(420, len(heat)*29+100)), use_container_width=True)
     with reliability:
-        st.info('Operating-hour data is unavailable, so operating-time MTBF is not calculated. '
-                'The interval below is calendar time between the previous fault closure and the next fault opening; it includes nights and holidays.')
+        st.caption('CALENDAR TIME · Includes nights and holidays; not operating-time MTBF.')
         c1, c2, c3 = st.columns(3)
-        c1.metric('Calendar interval between faults (hours)', fmt(data['Aralik_Dk'].mean()/60))
-        c2.metric('Relative health score / 100', fmt(summary['Score'].mean()))
-        c3.metric('Machines with score below 60', int((summary['Score'] < 60).sum()))
-        st.caption(f"Machines with a calculated score: {summary['Score'].count()} / {len(summary)}. Missing data is not converted to a zero score.")
+        c1.metric('FAULT INTERVAL (H)', fmt(data['Aralik_Dk'].mean()/60))
+        c2.metric('RELATIVE HEALTH / 100', fmt(summary['Score'].mean()))
+        c3.metric('SCORE BELOW 60', int((summary['Score'] < 60).sum()))
+        st.caption(f"SCORED MACHINES: {summary['Score'].count()} / {len(summary)}")
         left, right = st.columns(2)
         with left:
-            st.subheader('Calendar interval between faults')
-            horizontal(summary, 'Aralik', 'Calendar interval (hours)', '#2dd4bf', 'interval', limit)
+            st.subheader('FAULT INTERVAL (H)')
+            horizontal(summary, 'Aralik', 'HOURS', '#2dd4bf', 'interval', limit)
         with right:
-            st.subheader('Lowest relative health scores')
-            horizontal(summary, 'Score', 'Relative score / 100', '#2dd4bf', 'health', limit)
-        with st.expander('Calculation methods and limitations', expanded=True):
+            st.subheader('RELATIVE HEALTH SCORE')
+            horizontal(summary, 'Score', 'SCORE / 100', '#2dd4bf', 'health', limit)
+        with st.expander('CALCULATION NOTES', expanded=False):
             st.markdown("""- **MTTR:** average `STOPPAGE TIME` for valid closed records, in minutes. If this field includes waiting time, it is not pure active repair time.
 - **Calendar interval:** positive elapsed time from the previous record's closure to the current record's opening for the same machine across the full history. A closure before the selected period may be used. Missing closing times, open/invalid previous closures and overlaps are excluded from the average; records are retained.
 - **Relative score:** 100 − (normalized MTTR × 40 + normalized fault count × 35 + inverse-normalized calendar interval × 25). All machines in the same period form the reference; machine selection does not change it. Scores can change when the date range or source data changes.
 - **The 60-point threshold** is a display rule, not a standard risk or availability limit. The score uses calendar intervals instead of operating-time MTBF and is an aid to maintenance prioritization.
 - Fixed targets have not been defined, so no target values were assumed. Operating-time MTBF and target-based scoring require production operating-hour data.""")
-        display = summary.rename(columns={'Ariza':'Fault count', 'Acik':'Open records', 'MTTR':'MTTR (min)', 'Durus':'Downtime (min)', 'Gecerli_Durus':'Records with valid duration', 'Aralik':'Calendar interval (min)', 'Aralik_Adet':'Interval count', 'Score':'Relative score'})
+        display = summary.rename(columns={'Ariza':'Fault count', 'Acik':'OPEN RECORDS', 'MTTR':'MTTR (min)', 'Durus':'Downtime (min)', 'Gecerli_Durus':'Records with valid duration', 'Aralik':'Calendar interval (min)', 'Aralik_Adet':'Interval count', 'Score':'Relative score'})
         st.dataframe(display.rename_axis('Machine'), use_container_width=True)
     with records:
-        st.info('Date-only closures may appear as 00:00:00 in the table; this is not the actual closing time. The Closing time available field indicates this distinction. Without a closing time, the next fault interval is not calculated.')
-        st.caption('The default source date format is Day/Month/Year. Change it in the sidebar if your source uses Month/Day/Year. STOPPAGE TIME must contain numeric minutes.')
+        with st.expander('DATA NOTES', expanded=False):
+            st.info('Date-only closures may appear as 00:00:00 in the table; this is not the actual closing time. The Closing time available field indicates this distinction. Without a closing time, the next fault interval is not calculated.')
+            st.caption('The default source date format is Day/Month/Year. Change it in the sidebar if your source uses Month/Day/Year. STOPPAGE TIME must contain numeric minutes.')
         columns = ['Makine', 'Ariza_Tipi', 'Baslangic', 'Bitis', 'Acik', 'Durus_Dk', 'Aralik_Dk', 'Kapanis_Saati_Var', 'Veri_Uyarisi']
         table = display_records(data[columns].sort_values('Baslangic', ascending=False))
         st.dataframe(table, use_container_width=True, height=480)
-        st.download_button('Download selected records as CSV', table.to_csv(index=False).encode('utf-8-sig'), 'maintenance_records.csv', 'text/csv')
+        st.download_button('DOWNLOAD CSV', table.to_csv(index=False).encode('utf-8-sig'), 'maintenance_records.csv', 'text/csv')
         excluded = all_data[all_data['Baslangic'].isna() | all_data['Makine'].isna()]
         st.caption(f'Source records excluded from period analysis due to a missing/invalid date or machine: {len(excluded)}')
         if not excluded.empty:
