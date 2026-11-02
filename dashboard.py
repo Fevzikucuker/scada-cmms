@@ -156,8 +156,119 @@ def display_records(frame):
     return frame.rename(columns=DISPLAY_COLUMNS)
 
 
+
+FAULT_FIELDS = {
+    'LÜTFEN ARIZAYI TANIMLAYINIZ(PLEASE DESCRIBE THE PROBLEM)': 'DESCRIPTION',
+    'Yapılan İş': 'WORK PERFORMED',
+    'Değişen Parça': 'REPLACED PARTS',
+    'RECORD_ID': 'RECORD ID',
+}
+
+
+def fault_log_data(data):
+    log = data.copy()
+    for source, target in FAULT_FIELDS.items():
+        log[target] = log[source].fillna('').astype(str) if source in log else ''
+    log['STATUS'] = 'CLOSED'
+    log.loc[log['Acik'], 'STATUS'] = 'OPEN'
+    invalid_close = ~log['Acik'] & (log['Bitis'].isna() |
+        (log['Bitis'].dt.normalize() < log['Baslangic'].dt.normalize()) |
+        (log['Kapanis_Saati_Var'] & (log['Bitis'] < log['Baslangic'])))
+    log.loc[invalid_close, 'STATUS'] = 'CHECK DATA'
+    # Preserve source status without using it to change the existing KPI rules.
+    if 'STATUS' in data:
+        log['SOURCE STATUS'] = data['STATUS'].fillna('').astype(str).replace({
+            'TAMAMLANDI': 'CLOSED', 'AÇIK': 'OPEN', 'KAPALI': 'CLOSED',
+            'DEVAM EDİYOR': 'IN PROGRESS'})
+    else:
+        log['SOURCE STATUS'] = ''
+    log['_priority'] = log['STATUS'].map({'OPEN': 0, 'CHECK DATA': 1, 'CLOSED': 2})
+    return log.sort_values(['_priority', 'Baslangic'], ascending=[True, False], kind='stable')
+
+
+def filter_fault_log(log, status, query):
+    result = log if status == 'ALL' else log[log['STATUS'].eq(status)]
+    if query.strip():
+        fields = ['Makine', 'Ariza_Tipi', 'DESCRIPTION', 'WORK PERFORMED', 'REPLACED PARTS', 'RECORD ID']
+        match = result[fields].fillna('').astype(str).apply(
+            lambda col: col.str.contains(query.strip(), case=False, regex=False)).any(axis=1)
+        result = result[match]
+    return result.copy()
+
+
+def fault_row_style(row):
+    colors = {'OPEN': '#482026', 'CLOSED': '#123529', 'CHECK DATA': '#49381c'}
+    color = colors.get(row['STATUS'], '#111c2e')
+    return [f'background-color: {color}; color: #e2e8f0'] * len(row)
+
+
+def render_fault_log(data):
+    st.subheader('FAULT LOG')
+    st.caption('Selected machines and opening dates · Open records first')
+    log = fault_log_data(data)
+    controls = st.columns([1, 3])
+    with controls[0]:
+        status = st.selectbox('STATUS', ['ALL', 'OPEN', 'CLOSED', 'CHECK DATA'], key='fault_status')
+    with controls[1]:
+        query = st.text_input('SEARCH', placeholder='Machine, description, work performed or record ID', key='fault_search')
+    shown = filter_fault_log(log, status, query)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric('RECORDS', len(shown))
+    c2.metric('OPEN', int(shown['STATUS'].eq('OPEN').sum()))
+    c3.metric('CLOSED', int(shown['STATUS'].eq('CLOSED').sum()))
+    c4.metric('DOWNTIME (MIN)', fmt(shown['Durus_Dk'].sum(min_count=1)))
+    if shown['STATUS'].eq('CHECK DATA').any():
+        st.warning('Some records have an invalid closing date. Review CHECK DATA records.')
+    if shown.empty:
+        st.info('No matching fault records.')
+        return
+    display = shown.rename(columns={'Baslangic': 'OPENED AT', 'Makine': 'MACHINE',
+        'Ariza_Tipi': 'FAULT TYPE', 'Durus_Dk': 'DOWNTIME (MIN)'})
+    columns = ['OPENED AT', 'MACHINE', 'FAULT TYPE', 'DESCRIPTION', 'STATUS', 'DOWNTIME (MIN)']
+    table = display[columns]
+    st.dataframe(table.style.apply(fault_row_style, axis=1).format(
+        {'DOWNTIME (MIN)': '{:,.1f}'}, na_rep='—'),
+        use_container_width=True, height=600, hide_index=True,
+        column_config={'DESCRIPTION': st.column_config.TextColumn('DESCRIPTION', width='large'),
+                       'OPENED AT': st.column_config.DatetimeColumn('OPENED AT', format='DD.MM.YYYY HH:mm')})
+    st.caption('RED: OPEN · GREEN: CLOSED · AMBER: CHECK DATA')
+    export = display.rename(columns={'Bitis': 'CLOSED AT', 'Veri_Uyarisi': 'DATA WARNING'})[
+        columns + ['CLOSED AT', 'WORK PERFORMED', 'REPLACED PARTS', 'RECORD ID', 'SOURCE STATUS', 'DATA WARNING']]
+    st.download_button('DOWNLOAD FAULT LOG', export.to_csv(index=False).encode('utf-8-sig'),
+        'fault_log.csv', 'text/csv', key='download_fault_log')
+    with st.expander('RECORD DETAILS', expanded=False):
+        selected_row = st.selectbox('SELECT RECORD', list(shown.index),
+            format_func=lambda i: f"{shown.at[i, 'Baslangic']:%d.%m.%Y %H:%M} | {shown.at[i, 'Makine']} | {shown.at[i, 'STATUS']}",
+            key='fault_detail')
+        row = shown.loc[selected_row]
+        st.caption('DESCRIPTION')
+        st.text(row['DESCRIPTION'] or 'Not recorded')
+        st.caption('WORK PERFORMED')
+        st.text(row['WORK PERFORMED'] or 'Not recorded')
+        st.caption('REPLACED PARTS')
+        st.text(row['REPLACED PARTS'] or 'Not recorded')
+        st.caption('RECORD ID')
+        st.text(row['RECORD ID'] or 'Not recorded')
+        st.caption('CLOSED AT')
+        closed_text = 'Not recorded' if pd.isna(row['Bitis']) else row['Bitis'].strftime(
+            '%d.%m.%Y %H:%M:%S' if row['Kapanis_Saati_Var'] else '%d.%m.%Y (time not recorded)')
+        st.text(closed_text)
+        if row['SOURCE STATUS']:
+            st.caption('SOURCE STATUS')
+            st.text(row['SOURCE STATUS'])
+        if row['Veri_Uyarisi']:
+            st.warning(row['Veri_Uyarisi'])
+    with st.expander('FAULT LOG NOTES', expanded=False):
+        st.write('This is a read-only view of the existing Google Sheets records. '
+                 'Descriptions and maintenance notes are shown in their original language. '
+                 'Status follows the closing field: blank = OPEN; valid closure = CLOSED. '
+                 'Invalid closing dates are marked CHECK DATA. '
+                 'Downtime uses the same validated durations as the KPI cards; missing or invalid values are excluded. '
+                 'Search and status filters affect this log only. Existing fault reporting and closure workflows remain active.')
+
+
 def main():
-    st.set_page_config(page_title='BHS | Maintenance KPI v4.4 EN', page_icon='⚙️', layout='wide')
+    st.set_page_config(page_title='BHS | Maintenance KPI v4.5 EN', page_icon='⚙️', layout='wide')
     st.markdown('''<style>
     .stApp {background:#0b1220; color:#dbe7f3}
     [data-testid="stSidebar"] {background:#111c2e}
@@ -177,7 +288,7 @@ def main():
     
     </style>''', unsafe_allow_html=True)
     st.sidebar.title('MAINTENANCE KPI')
-    st.sidebar.caption('BHS TÜRKİYE · v4.4 EN')
+    st.sidebar.caption('BHS TÜRKİYE · v4.5 EN')
     refresh = st.sidebar.checkbox('AUTO REFRESH · 10 SEC', value=True)
     if refresh:
         st_autorefresh(interval=10000, key='live')
@@ -227,7 +338,7 @@ def main():
     c2.metric('OPEN RECORDS', int(data['Acik'].sum()))
     c3.metric('DOWNTIME (H)', fmt(data['Durus_Dk'].sum(min_count=1)/60))
     c4.metric('MTTR (MIN)', fmt(data['Durus_Dk'].mean()))
-    overview, reliability, records = st.tabs(['OVERVIEW', 'RELIABILITY', 'RECORDS'])
+    overview, faults, reliability, records = st.tabs(['OVERVIEW', 'FAULT LOG', 'RELIABILITY', 'DATA QUALITY'])
     with st.expander('DATA COVERAGE', expanded=False):
         st.caption('Cards refer to records opened during the selected period. Open record = blank closing field. '
                    'Downtime and MTTR include only records with valid closure and duration; '
@@ -267,6 +378,8 @@ def main():
         heat = heat.loc[heat.sum(axis=1).sort_values(ascending=False).index]
         fig = px.imshow(heat, text_auto=True, aspect='auto', color_continuous_scale='Blues', labels=dict(x='Fault type', y='Machine', color='Count'))
         st.plotly_chart(style_chart(fig, max(420, len(heat)*29+100)), use_container_width=True)
+    with faults:
+        render_fault_log(data)
     with reliability:
         st.caption('CALENDAR TIME · Includes nights and holidays; not operating-time MTBF.')
         c1, c2, c3 = st.columns(3)
