@@ -268,7 +268,7 @@ def render_fault_log(data):
 
 
 def main():
-    st.set_page_config(page_title='BHS | Maintenance KPI v4.6 EN', page_icon='⚙️', layout='wide')
+    st.set_page_config(page_title='BHS TÜRKİYE | Maintenance Dashboard', page_icon='⚙️', layout='wide')
     st.markdown('''<style>
     .stApp {background:#0b1220; color:#dbe7f3}
     [data-testid="stSidebar"] {background:#111c2e}
@@ -301,8 +301,8 @@ def main():
     [data-testid="stSidebar"] button {border-radius:9px; border-color:#30445b}
     [data-testid="stSidebar"] button:hover {border-color:#2dd4bf; color:#5eead4}
     .sb-brand {padding:0 0 20px; border-bottom:1px solid #293c52; margin-bottom:18px}
-    .sb-kicker {font-size:10px; font-weight:700; letter-spacing:2px; color:#5eead4}
-    .sb-title {font-size:23px; font-weight:700; color:#f1f5f9; margin:7px 0 3px}
+    .sb-kicker {font-size:24px; line-height:1.25; font-weight:800; letter-spacing:0.3px; color:#5eead4}
+    .sb-title {font-size:17px; line-height:1.4; font-weight:700; letter-spacing:0.5px; color:#f1f5f9; margin:9px 0 3px}
     .sb-sub {font-size:11px; color:#8fa5bc; letter-spacing:.5px}
     .sb-section {font-size:11px; font-weight:700; letter-spacing:1.3px;
       color:#b6c9dc; padding:2px 0 10px}
@@ -311,7 +311,7 @@ def main():
       color:#8fa5bc; font-size:11px; line-height:1.8}
     </style>''', unsafe_allow_html=True)
     st.sidebar.markdown('<div class="sb-brand"><div class="sb-kicker">BHS TÜRKİYE</div>'
-        '<div class="sb-title">Maintenance</div><div class="sb-sub">PERFORMANCE CONTROL · v4.6</div></div>', unsafe_allow_html=True)
+        '<div class="sb-title">MAINTENANCE<br>DASHBOARD</div></div>', unsafe_allow_html=True)
     filter_panel = st.sidebar.container()
     with st.sidebar.expander('DATA SETTINGS', expanded=False):
         refresh = st.checkbox('Auto refresh · 10 sec', value=True)
