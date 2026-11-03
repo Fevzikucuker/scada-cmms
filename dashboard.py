@@ -268,7 +268,7 @@ def render_fault_log(data):
 
 
 def main():
-    st.set_page_config(page_title='BHS | Maintenance KPI v4.5 EN', page_icon='⚙️', layout='wide')
+    st.set_page_config(page_title='BHS | Maintenance KPI v4.6 EN', page_icon='⚙️', layout='wide')
     st.markdown('''<style>
     .stApp {background:#0b1220; color:#dbe7f3}
     [data-testid="stSidebar"] {background:#111c2e}
@@ -286,15 +286,41 @@ def main():
     [data-testid="stWidgetLabel"] p {font-weight:600; letter-spacing:0.02em}
     [data-testid="stCaptionContainer"] {color:#94a3b8}
     
+
+    [data-testid="stSidebar"] {background:linear-gradient(180deg,#111c2e 0%,#0d1726 100%);
+      border-right:1px solid #243449}
+    [data-testid="stSidebar"] [data-testid="stSidebarUserContent"] {padding:1.5rem 1.1rem}
+    [data-testid="stSidebar"] [data-testid="stVerticalBlockBorderWrapper"] {
+      border-color:#293c52 !important; border-radius:12px !important}
+    [data-testid="stSidebar"] [data-baseweb="select"] > div,
+    [data-testid="stSidebar"] [data-baseweb="input"] {
+      background:#0b1524; border-color:#30445b; border-radius:9px}
+    [data-testid="stSidebar"] [data-baseweb="tag"] {
+      background:#163c46 !important; color:#b6f3ea !important;
+      border:1px solid #28616a !important; border-radius:6px !important}
+    [data-testid="stSidebar"] button {border-radius:9px; border-color:#30445b}
+    [data-testid="stSidebar"] button:hover {border-color:#2dd4bf; color:#5eead4}
+    .sb-brand {padding:0 0 20px; border-bottom:1px solid #293c52; margin-bottom:18px}
+    .sb-kicker {font-size:10px; font-weight:700; letter-spacing:2px; color:#5eead4}
+    .sb-title {font-size:23px; font-weight:700; color:#f1f5f9; margin:7px 0 3px}
+    .sb-sub {font-size:11px; color:#8fa5bc; letter-spacing:.5px}
+    .sb-section {font-size:11px; font-weight:700; letter-spacing:1.3px;
+      color:#b6c9dc; padding:2px 0 10px}
+    .sb-summary {font-size:12px; color:#8ddbd0; padding:8px 0 0}
+    .sb-status {border-top:1px solid #293c52; margin-top:18px; padding-top:14px;
+      color:#8fa5bc; font-size:11px; line-height:1.8}
     </style>''', unsafe_allow_html=True)
-    st.sidebar.title('MAINTENANCE KPI')
-    st.sidebar.caption('BHS TÜRKİYE · v4.5 EN')
-    refresh = st.sidebar.checkbox('AUTO REFRESH · 10 SEC', value=True)
+    st.sidebar.markdown('<div class="sb-brand"><div class="sb-kicker">BHS TÜRKİYE</div>'
+        '<div class="sb-title">Maintenance</div><div class="sb-sub">PERFORMANCE CONTROL · v4.6</div></div>', unsafe_allow_html=True)
+    filter_panel = st.sidebar.container()
+    with st.sidebar.expander('DATA SETTINGS', expanded=False):
+        refresh = st.checkbox('Auto refresh · 10 sec', value=True)
+        if st.button('REFRESH DATA', use_container_width=True):
+            load_data.clear()
+        dayfirst = st.selectbox('SOURCE DATE FORMAT', ['Day / Month / Year', 'Month / Day / Year']) == 'Day / Month / Year'
     if refresh:
         st_autorefresh(interval=10000, key='live')
-    if st.sidebar.button('REFRESH DATA'):
-        load_data.clear()
-    dayfirst = st.sidebar.selectbox('DATE FORMAT', ['Day / Month / Year', 'Month / Day / Year']) == 'Day / Month / Year'
+    connection_panel = st.sidebar.empty()
     stale = False
     try:
         raw, fetched = load_data(CSV_URL)
@@ -312,17 +338,40 @@ def main():
     except Exception as exc:
         st.error(f'Unable to prepare data: {exc}')
         st.stop()
-    st.sidebar.caption(('⚠ Stale data' if stale else '✓ CSV data loaded') + '\n\nLast successful fetch (Türkiye time): ' + fetched.strftime('%d.%m.%Y %H:%M:%S'))
+    connection_panel.markdown('<div class="sb-status">' +
+        ('<span style="color:#fbbf24">● STALE DATA</span>' if stale else '<span style="color:#2dd4bf">● DATA CONNECTED</span>') +
+        '<br>LAST SYNC · TÜRKİYE<br>' + fetched.strftime('%d %b %Y · %H:%M:%S') + '</div>', unsafe_allow_html=True)
+
     valid = all_data.dropna(subset=['Baslangic', 'Makine'])
     if valid.empty:
         st.warning('No records with a valid machine and start date were found.')
         st.dataframe(display_records(all_data), use_container_width=True)
         st.stop()
     machines = sorted(valid['Makine'].unique())
-    selected = st.sidebar.multiselect('MACHINES', machines, default=machines)
-    dates = st.sidebar.date_input('DATE RANGE',
-        value=(valid['Baslangic'].min().date(), valid['Baslangic'].max().date()))
-    limit = st.sidebar.selectbox('MACHINES PER CHART', sorted(set([10, 15, 20, len(machines)])), index=1)
+    with filter_panel:
+        with st.container(border=True):
+            st.markdown('<div class="sb-section">01 &nbsp; EQUIPMENT</div>', unsafe_allow_html=True)
+            scope = st.radio('MACHINE SCOPE', ['ALL MACHINES', 'CUSTOM'], horizontal=True,
+                             label_visibility='collapsed', key='machine_scope')
+            if scope == 'ALL MACHINES':
+                selected = machines
+            else:
+                selected = st.multiselect('SELECT MACHINES', machines, default=[],
+                    placeholder='Search and select machines', key='custom_machines')
+            st.markdown(f'<div class="sb-summary">{len(selected)} / {len(machines)} machines selected</div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            st.markdown('<div class="sb-section">02 &nbsp; REPORTING PERIOD</div>', unsafe_allow_html=True)
+            dates = st.date_input('DATE RANGE',
+                value=(valid['Baslangic'].min().date(), valid['Baslangic'].max().date()),
+                format='DD/MM/YYYY', key='reporting_dates')
+            st.caption('Based on fault opening date')
+        with st.container(border=True):
+            st.markdown('<div class="sb-section">03 &nbsp; DISPLAY</div>', unsafe_allow_html=True)
+            chart_options = sorted(set([10, 15, 20, len(machines)]))
+            limit = st.selectbox('MACHINES PER CHART', chart_options,
+                index=chart_options.index(15),
+                format_func=lambda n: f'ALL ({n})' if n == len(machines) else f'TOP {n}',
+                key='chart_limit')
     st.title('BHS TÜRKİYE | MAINTENANCE DASHBOARD')
     if len(dates) != 2:
         st.info('Select a start and end date.')
